@@ -258,8 +258,9 @@ announces `aria-busy`. Dark and light themes are driven entirely by the shared s
 - `npx tsx scripts/generate-historical-reports.ts` produces a report for every registry incident
   (17 at the time of writing), each with seven sections and a mermaid block, and prints a summary
   table with the real `generatedBy` value per incident.
-- `npx tsc --noEmit` reports no errors in the files added here. The workspace currently has
-  pre-existing errors in `packages/core/src/incidents.ts` (`'BNB'` and `'zkSync Era'` are not in the
-  `Chain` union) and `packages/forensic-engine/src/custom.ts` (`forgePath` is not in
-  `CustomToolchainStatus`); those files are outside this task's ownership and were not modified.
+- `npx tsc --noEmit -p packages/forensic-engine/tsconfig.json` and
+  `npx tsc --noEmit -p packages/web/tsconfig.json` both exit 0 with zero errors, as does
+  `npm run typecheck --workspaces --if-present`. The repository has no root `tsconfig.json`, so a bare
+  `npx tsc --noEmit` at the root prints the compiler help; the package-level commands are the
+  meaningful check.
 - The API routes are exercised against the dev server on `http://localhost:3000`.

@@ -44,8 +44,9 @@ export default function HistoricalReportPage() {
     slug ? `/api/historical/${encodeURIComponent(slug)}/report` : null,
   );
 
+  if (!slug) return <ReportSkeleton />;
+
   const notFound =
-    (!slug && !detail.loading && !report.loading) ||
     (detail.error !== null && detail.error.includes('404')) ||
     (report.error !== null && report.error.includes('404'));
 

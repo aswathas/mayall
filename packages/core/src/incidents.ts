@@ -408,7 +408,7 @@ export const INCIDENTS: Incident[] = [
     chain: 'Ethereum',
     date: '2026-10-30',
     lossUsd: 6_300_000_000,
-    vectors: ['access-control', 'delegatecall-injection'],
+    vectors: ['access-control'],
     target: 'Binance',
     rootCause:
       'Attackers gained access to a compromised DevOps engineer\'s laptop and misused private keys; Binance and Blockaid\'s CEO describe key misuse, not a smart-contract exploit. EIP-7702 did not cause the hack — the wallets could have been drained without it — but the Ethereum upgrade may have amplified the losses by helping bypass withdrawal safeguards.',

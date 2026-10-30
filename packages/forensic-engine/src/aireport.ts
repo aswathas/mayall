@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import type { Incident, PatternDetection } from '@helix/core';
+import type { Incident } from '@helix/core';
 import { ATTACK_VECTORS } from '@helix/core';
 import { repoRoot } from './foundry.js';
 import {

@@ -27,7 +27,6 @@ import {
   buildReportPrompt,
   caseIdFor,
   cleanModelMarkdown,
-  extractMermaid,
   localDetectionsFor,
   readStoredReport,
   repoRoot,

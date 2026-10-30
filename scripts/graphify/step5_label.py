@@ -54,7 +54,10 @@ def derive_label(members: list[str]) -> str:
     return " ".join(top[:2]) if len(top) > 1 else top[0]
 
 
-node_label = {n["id"]: str(n.get("label") or n.get("name") or n["id"]) for n in G.nodes()}
+node_label = {
+    nid: str(attrs.get("label") or attrs.get("name") or nid)
+    for nid, attrs in G.nodes(data=True)
+}
 
 labels: dict[int, str] = {}
 for cid, members in communities.items():

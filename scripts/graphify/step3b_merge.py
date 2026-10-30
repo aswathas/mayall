@@ -86,16 +86,19 @@ partials = [
     if line
 ]
 SPEC = r"C:\Users\aswat\.claude\skills\graphify\references\extraction-spec.md"
-saved = save_semantic_cache(
-    new["nodes"],
-    new["edges"],
-    new["hyperedges"],
-    root=str(ROOT),
-    allowed_source_files=uncached,
-    prompt_file=SPEC,
-    partial_source_files=partials,
-)
-print(f"Cached {saved} files" + (f" ({len(partials)} left partial for retry)" if partials else ""))
+if uncached:
+    saved = save_semantic_cache(
+        new["nodes"],
+        new["edges"],
+        new["hyperedges"],
+        root=str(ROOT),
+        allowed_source_files=uncached,
+        prompt_file=SPEC,
+        partial_source_files=partials,
+    )
+    print(f"Cached {saved} files" + (f" ({len(partials)} left partial for retry)" if partials else ""))
+else:
+    print("Semantic cache already complete - nothing new to cache.")
 
 # ---- merge cached + new ----------------------------------------------------------
 cached = json.loads((OUT / ".graphify_cached.json").read_text(encoding="utf-8"))

@@ -1,3 +1,7 @@
-# Skill libraries are tooling, not product surface — keep them out of the product graph.
+# Skill libraries and vendored dependencies are tooling, not product surface —
+# keep them out of the product knowledge graph.
 .agents/
 .claude/
+agent/
+data/skills/
+contracts/lib/

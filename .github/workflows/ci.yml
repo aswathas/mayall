@@ -36,8 +36,11 @@ jobs:
         with:
           version: stable
 
+      - name: Expose the Foundry bin directory to the engine
+        run: echo "FOUNDRY_BIN_DIR=$(dirname "$(command -v forge)")" >> "$GITHUB_ENV"
+
       - name: Install forge-std
-        run: git clone --depth 1 https://github.com/foundry-rs/forge-std.git contracts/lib/forge-std
+        run: mkdir -p contracts/lib && git clone --depth 1 https://github.com/foundry-rs/forge-std.git contracts/lib/forge-std
 
       - name: Typecheck the workspace
         run: npm run typecheck
