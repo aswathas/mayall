@@ -1,0 +1,169 @@
+You are rebuilding the LIVE LAB, the CASE FILE, the REPORT page, the DOCS page and the APP SHELL of "HELIX — Web3 Exploit Forensics Console", a Next.js 15 (App Router) / React 19 / Tailwind v4 app.
+
+# READ FIRST — this is the contract, it wins over any habit
+C:\Users\aswat\Projects\w3-forensics\docs\design\RED-ROOM.md
+Read it completely before writing a single line. It defines the "Red Room"
+visual world (warm-black ground, arterial-red signal, bone chrome), the hard
+bans (no kicker above a heading, no hero-metric card grid, no nested panels,
+no gradient text, no emoji icons, tokens only, one authored motion moment),
+the component APIs, the two themes (dark "red room" / light "paper room"), and
+the anatomy-figure brief for the docs page.
+
+Then read:
+- packages/core/src/index.ts    (types: Incident, SimulationResult, ForensicReport, PatternDetection, Severity, Chain, ATTACK_VECTORS, SEVERITY_COLORS, CHAIN_COLORS)
+- packages/core/src/incidents.ts (INCIDENTS, INCIDENT_BY_SLUG)
+- packages/web/app/globals.css   (the token system and the classes you must use)
+- packages/web/components/Panel.tsx, MetricStrip.tsx, ThemeToggle.tsx, SeverityChip.tsx, ChainChip.tsx, VectorChip.tsx (reuse them)
+- packages/web/lib/format.ts, packages/web/lib/types.ts (existing helpers — reuse them)
+- packages/web/app/api/** (the exact response shapes — do not change them)
+- packages/web/components/LiveSimPanel.tsx and components/ReportView.tsx may be
+  being written by another agent RIGHT NOW with these exact APIs:
+    <LiveSimPanel scenarioId={string} onResult?: (r: SimulationResult) => void} />
+    <ReportView report={ForensicReport} scenarioId?: string} />
+  Import and use them. If they are not on disk yet, still import them — the
+  other agent will land them.
+
+# HARD FILE OWNERSHIP — you own EXACTLY these files
+packages/web/app/lab/page.tsx
+packages/web/app/cases/[slug]/page.tsx
+packages/web/app/cases/[slug]/report/page.tsx
+packages/web/app/docs/page.tsx
+packages/web/components/AppShell.tsx
+packages/web/components/EvidencePipelineFigure.tsx
+
+Do NOT touch: app/page.tsx, app/incidents/page.tsx, app/globals.css,
+app/layout.tsx, app/api/**, components/Panel.tsx, MetricStrip.tsx,
+ThemeToggle.tsx, the chips, components/AttackReplay.tsx, TraceViewer.tsx,
+GasFlameChart.tsx, StorageDiffInspector.tsx, PatternReport.tsx,
+BalanceTimeline.tsx, MermaidDiagram.tsx, LiveSimPanel.tsx, SimSummary.tsx,
+Loading.tsx, ReportView.tsx, IncidentTable.tsx, IncidentFilters.tsx,
+LossTimelineChart.tsx, ChainDonut.tsx, VectorBreakdown.tsx, SeveritySplit.tsx,
+EngineStatus.tsx, lib/**, packages/core/**, packages/forensic-engine/**,
+contracts/**, docs/**, scripts/**. Another agent owns those.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics\packages\web
+The dev server is already running on http://localhost:3000 and hot-reloads.
+
+# WHAT THE API GIVES YOU
+GET  /api/scenarios -> ScenarioSpec[]  (id, title, vectorId, chain, description, lookFor[], contractName, testFile)
+POST /api/simulate  { scenarioId } -> SimulationResult
+POST /api/simulate/all -> { results: SimulationResult[], totalMs }
+GET  /api/report/<caseId>?scenario=<scenarioId> -> ForensicReport
+POST /api/report/<caseId>/narrative { text } -> { ok, path }
+GET  /api/bundle/<caseId>?scenario=<scenarioId> -> zip download
+GET  /api/incidents/<slug> -> { incident }
+GET  /api/status -> { foundry, scenarios, artifacts, version }
+
+# WHAT TO BUILD
+
+## 1. app/lab/page.tsx — THE LIVE LAB (the demo stage)
+This is the screen the judges watch. It must feel like an instrument you can
+fire, not a settings page.
+- A page head with a real <h1> ("Live lab" or similar). No kicker above it.
+- **Scenario library**: the 6 scenarios from /api/scenarios as a selectable
+  list. Each entry shows: title, vector chip, chain chip, the contract name,
+  the description, and the `lookFor` checklist — the checklist is what an
+  investigator should look for in the evidence, so it reads as a spec, not
+  marketing.
+- **"Run full suite"** button -> POST /api/simulate/all. Shows a per-scenario
+  result list: pass/fail, duration, loss, and a link into the results area.
+  While it runs, a live status line with an elapsed timer and a live dot.
+- **Per-scenario "Run"** -> POST /api/simulate, then hand the result to
+  `<LiveSimPanel>`.
+- **Results area**: LiveSimPanel renders the AttackReplay canvas piece, the
+  trace, the gas flame, the storage diff, the balances, the pattern findings
+  and the raw forge output.
+- **Forensic report + bundle**: a button that GETs
+  `/api/report/lab-<scenarioId>?scenario=<scenarioId>` and shows the report
+  inline (ReportView), plus a download button for
+  `/api/bundle/lab-<scenarioId>?scenario=<scenarioId>`.
+- Be honest in the copy: this is a local Foundry simulation on a local EVM,
+  not mainnet. Say so once, clearly, near the top of the page.
+
+## 2. app/cases/[slug]/page.tsx — THE CASE FILE
+- Fetch /api/incidents/<slug>. Handle not-found with a real empty state.
+- Header: incident name (h1), target, chain chip, severity chip, date,
+  reported loss (arterial, large, display face), and the attack-vector chips.
+- Left column: the summary, the root cause, the actor addresses with their
+  role (attacker / victim / intermediary) in mono with copy buttons, the
+  known transaction hashes, and the reference links.
+- Right column: the loss by vector, the chain, and the reproduction CTA.
+  - When `incident.reproducible` is true, the CTA goes to
+    `/lab?scenario=<incident.scenarioId>` and the page ALSO renders a live
+    panel: a "Run simulation" button that POSTs /api/simulate for that
+    scenario and shows the real result through LiveSimPanel. This is the
+    centrepiece — the case page must show a REAL forge execution.
+  - When it is false, say plainly that no local proof-of-concept exists for
+    this incident, and show what the public record does contain.
+- Use MetricStrip for the case's headline numbers (one band, not cards).
+
+## 3. app/cases/[slug]/report/page.tsx — THE WRITTEN CASE
+- Fetch /api/report/<slug>?scenario=<incident.scenarioId> and render the
+  ForensicReport through ReportView.
+- Add a small control that lets an operator paste a replacement executive
+  summary (POST /api/report/<slug>/narrative) — this is how MiniMax Code
+  injects an authored narrative. Label it honestly: "Executive summary
+  (operator override)".
+- Download buttons: the bundle zip and the markdown report.
+
+## 4. app/docs/page.tsx — DOCUMENTATION + THE ANATOMY FIGURE
+- A readable documentation page (Read mode: structure for comprehension, and
+  make the reading worth it).
+- Explain: what HELIX is, the evidence pipeline, the attack-vector taxonomy,
+  the detectors, how to run a simulation, and what the evidence does and does
+  not prove. Real content, no lorem ipsum, no filler.
+- **Include <EvidencePipelineFigure />** — the isometric SVG figure described
+  in section 11 of the contract. It must be a detailed physical object: a
+  heavy base on feet, a rail with tick rulers, a travelling carriage, sample
+  trays, knurled knobs, a dial gauge whose needle moves, a press at the end
+  and a signed bundle dropping into the tray. Many small precise solid parts,
+  four-tone shading, correct painter's order. Calm eased motion only — the
+  carriage advances, the needle settles, the bundle drops. No emoji, no
+  stock illustration, no flowchart boxes. The numbers it shows must come from
+  the same model that moves it.
+  Build it as a React component returning inline SVG. Animate with CSS
+  transitions/keyframes driven by class toggles (not timers), and honour
+  prefers-reduced-motion.
+
+## 5. components/AppShell.tsx — THE SHELL
+The frame the whole console sits in.
+- A left rail on desktop (≥1024px) with: the HELIX wordmark, the nav
+  (Overview, Incidents, Live lab, Docs), and a bottom block with the engine
+  status + the theme switch.
+- Under 1024px the rail collapses to a top bar and the nav becomes a
+  horizontal scroller.
+- Include the ThemeToggle (components/ThemeToggle.tsx) — it already handles
+  persistence and the pre-paint bootstrap.
+- The wordmark: set in the display face, with a small drawn SVG mark (not an
+  emoji, not a rounded square with a letter). Something that reads as an
+  instrument, an aperture or a specimen mark.
+- Active nav item is marked by the arterial signal, not only by colour —
+  include a small glyph or a rule as well.
+- The current route must be readable at a glance (usePathname).
+
+# HARD RULES
+- CSS variables from globals.css by name. NEVER a raw hex in a component.
+- Never nest a Panel inside a Panel.
+- No emoji or unicode glyphs as icons — lucide-react SVG only.
+- No component may branch on the theme.
+- Every interactive element is a real <button>/<a>, keyboard reachable, with
+  an aria-label when it shows only an icon.
+- Loading = skeletons. Error = names the problem and the recovery.
+- Real copy: name the action, never write "Error".
+
+# VERIFY BEFORE YOU FINISH
+1. `npx tsc --noEmit` in packages/web — ZERO errors from your files.
+2. Screenshot and LOOK:
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts lab /lab 1600 1000`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts case /cases/curve-v2-reentrancy 1600 1000`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts report /cases/curve-v2-reentrancy/report 1600 1000`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts docs /docs 1600 1000`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts lab-mobile /lab 390 900`
+   Fix what the screenshots show. Iterate until it is right.
+3. Confirm no console errors in the screenshot output.
+
+# DELIVERABLE (final message, max 30 lines, facts only)
+- Files created/rewritten with line counts.
+- `npx tsc --noEmit` result.
+- The screenshots you took and what they revealed.
+- Any deviation from this brief, with the reason.

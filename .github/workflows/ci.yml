@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Foundry + forensic pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Install forge-std
+        run: git clone --depth 1 https://github.com/foundry-rs/forge-std.git contracts/lib/forge-std
+
+      - name: Typecheck the workspace
+        run: npm run typecheck
+
+      - name: Build the contracts
+        working-directory: contracts
+        run: forge build
+
+      - name: Run the exploit proofs-of-concept
+        working-directory: contracts
+        run: forge test -vv
+
+      - name: Run the forensic pipeline (simulate -> detect -> report -> bundle)
+        run: npx tsx scripts/verify-pipeline.ts
+
+      - name: Note on the narrative layer
+        if: always()
+        run: |
+          echo "No MINIMAX_API_KEY is configured for CI."
+          echo "The AI narrative layer uses its deterministic generator here; the pipeline check does not depend on it."

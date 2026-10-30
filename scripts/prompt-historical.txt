@@ -1,0 +1,153 @@
+# BRIEF — HISTORICAL ANALYSIS + AI FORENSIC REPORTS (with diagrams)
+
+You are one of several parallel agents in `C:\Users\aswat\Projects\w3-forensics`.
+The product is **Mayall** — a Web3 exploit forensics tool that runs REAL Foundry exploit simulations
+and produces forensic reports + evidence bundles. Judges need to see it applied to REAL historical
+incidents, not just to our own toy scenarios.
+
+READ FIRST, IN THIS ORDER (do not skip):
+1. `docs/design/RED-ROOM.md` — the authoritative UI/design contract. Every rule binds you.
+2. `packages/core/src/index.ts` and `packages/core/src/incidents.ts` — the 16-incident registry,
+   the 16-vector taxonomy, severity model.
+3. `packages/forensic-engine/src/detectors.ts` — the 10 detectors AND `DETECTOR_CATALOG`
+   (the public rule set: `looksFor`, `emits`, `limitation`). READ THE `limitation` FIELD OF EACH
+   DETECTOR — your copy must not overstate what the detectors can do.
+4. `packages/forensic-engine/src/report.ts` — the 7-section report builder and `saveNarrative` /
+   `loadNarrative` (narratives live in `data/narratives/<caseId>.md`).
+5. `data/bible/forensic-bible.json` — THE REAL FORENSIC BIBLE, dumped from
+   `C:\Users\aswat\Downloads\Full Forensic Bible (v2).xlsx`. 14 sheets:
+   `00 Architecture Overview`, `01 Raw Logs Catalog`, `02 Derived Logs`, `03 Detection Signals`
+   (54 signals), `04 Attack Pattern Catalog` (37 attacks / 8 families), `05 Signal → Attack Mapping`,
+   `06 Derived → Signal Mapping`, `07 Fail Cases + Edge Cases`, `08 Build Order + Dependencies`,
+   `09 Known Address Registry`, `10 Real World Walkthroughs`, `11 Glossary`, `12 Coverage Summary`,
+   `13 Client Checklist`.
+   USE THIS AS THE AUTHORITATIVE PATTERN/SIGNAL REFERENCE. Every finding you produce should be
+   mapped onto a Bible attack pattern and the Bible signal names that would prove it.
+6. `packages/web/app/api/_lib.ts` and `packages/web/app/api/incidents/route.ts` — API conventions.
+7. `packages/web/components/MermaidDiagram.tsx`, `PatternReport.tsx`, `Panel.tsx`, `MetricStrip.tsx`,
+   `EmptyState.tsx`, `SeverityChip.tsx` — existing components you should IMPORT and reuse
+   (read their props first). Do NOT edit them.
+
+## YOUR EXCLUSIVE FILE OWNERSHIP (do not touch anything else — other agents own it)
+You own and may create/modify ONLY:
+- `packages/forensic-engine/src/historical.ts`
+- `packages/forensic-engine/src/aireport.ts`
+- `packages/web/app/api/historical/route.ts`
+- `packages/web/app/api/historical/[slug]/route.ts`
+- `packages/web/app/api/historical/[slug]/report/route.ts`
+- `packages/web/app/historical/page.tsx`
+- `packages/web/app/historical/[slug]/page.tsx`
+- `packages/web/app/historical/loading.tsx`
+- `packages/web/components/Historical*.tsx`
+- `packages/web/components/AiForensicReport.tsx`
+- `data/ai-reports/**`
+- `data/narratives/incident-*.md`
+- `scripts/generate-historical-reports.ts`
+- `docs/historical-analysis.md`
+
+DO NOT edit anything in `packages/web/app/{page.tsx,incidents,lab,docs,cases,attack-lab,evidence,bible,showcase}`,
+`packages/web/components/{AppShell,AttackReplay,TraceViewer,GasFlameChart,StorageDiffInspector,BalanceTimeline,PatternReport,MermaidDiagram,LiveSimPanel,SimSummary,EvidencePipelineFigure,VectorBreakdown,ChainDonut,SeveritySplit,LossTimelineChart,IncidentTable,IncidentFilters,EngineStatus}.tsx`,
+`packages/web/app/globals.css`, `packages/web/app/api/_lib.ts`,
+`packages/forensic-engine/src/{simulator,trace-parser,detectors,report,bundle,foundry,custom}.ts`,
+`packages/core/**`, `packages/cli/**`, `contracts/**`, `docs/pitch/**`, `packages/web/tests/**`, `scripts/qa/**`.
+If you need a change in a forbidden file, do NOT make it — note it in your final report.
+
+## WHAT TO BUILD
+
+### 1. `packages/forensic-engine/src/historical.ts` — analysis over the real registry
+For each of the 16 incidents in `packages/core/src/incidents.ts`:
+- Run our **own detector suite** in "historical mode": there is no local trace for a historical
+  incident, so the analysis must work from the incident's recorded evidence (chain, date, loss,
+  attack vectors, target, actors, tx references, the narrative of what happened).
+- For each incident, produce a `HistoricalFinding[]`:
+  - `vector` (our 16-vector taxonomy id), `confidence` (0..1), `biblePattern` (the matching attack
+    name from Bible sheet `04 Attack Pattern Catalog` — e.g. "Classic Reentrancy", "Classic Flash
+    Loan Exploit", "Read-Only Reentrancy"), `bibleSignals` (the signal names from sheet
+    `03 Detection Signals` that WOULD prove it — mark each as `expected` / `observed` /
+    `notApplicable`; `observed` only if the incident's recorded evidence actually contains it),
+    `evidenceRefs` (the incident's tx/reference ids), `reproduction` (link to the scenario id when
+    we have a live local reproduction of that vector — `packages/core/src/incidents.ts` has a
+    `scenarioId`/`reproducible` field; use it), and `limitations` (quote the detector's `limitation`
+    text from `DETECTOR_CATALOG`).
+- Aggregate into: findings by vector, findings by Bible family, confidence distribution, and a
+  coverage summary (how many of the 16 incidents we can locally reproduce = the "reproducible" count).
+- BE HONEST: this is metadata-driven retrospective classification, NOT a mainnet trace analysis.
+  Every panel that shows it must say so.
+
+### 2. AI-authored forensic reports — PAIR IT WITH MINIMAX CODE (`mcode`)
+`packages/forensic-engine/src/aireport.ts` + `scripts/generate-historical-reports.ts`.
+- The narrative layer must be generated by the local **mcode** CLI, not by a hardcoded template.
+  The binary is `C:\Users\aswat\.minimax-code\mcode.ps1`. Invoke it like:
+  ```
+  & "$env:USERPROFILE\.minimax-code\mcode.ps1" exec --cwd "C:\Users\aswat\Projects\w3-forensics" --model minimax/MiniMax-M3.1-Flash --effort on "<PROMPT>"
+  ```
+  (run it from PowerShell with `Start-Process`/`&` and capture stdout; add a timeout of ~180 s per
+  incident and capture stderr separately). If the model name is rejected, retry with
+  `minimax/MiniMax-M3`. If mcode fails or is unavailable, fall back to a deterministic generator and
+  mark the report `generatedBy: "deterministic"` instead of `generatedBy: "minimax-code"`.
+- Each report must be a real forensic document with these sections:
+  1. Case header (incident, chain, date, loss, actors, classification)
+  2. Executive summary (3–5 sentences, the money and the mechanism)
+  3. Attack sequence — a numbered narrative of the exploit
+  4. Evidence reconstruction — what the local reproduction proves vs what it does not
+  5. Detection analysis — which of the 10 Mayall detectors fire on the local scenario, mapped to the
+     Bible signal names, with the detectors' own limitations quoted
+  6. Remediation — specific, per vector (see `REMEDIATION` in `packages/forensic-engine/src/report.ts`
+     and the Bible sheets)
+  7. Client action plan — a numbered, time-boxed plan for a client (first 24 h / first week / first month)
+- ALSO generate a **mermaid diagram** for each incident: the attack flow
+  (`flowchart TD`) or the funds flow (`sequenceDiagram`). Embed it in the report markdown inside a
+  ```mermaid fenced block, and expose it separately so the UI can render it with the existing
+  `MermaidDiagram` component.
+- Store the markdown at `data/narratives/incident-<slug>.md` (this is where `loadNarrative` looks —
+  READ `packages/forensic-engine/src/report.ts` and match its exact on-disk format and `caseId`
+  convention so the existing narrative route picks your reports up). Also store a machine-readable
+  JSON with the findings + the mermaid source at `data/ai-reports/incident-<slug>.json`.
+- The script must be re-runnable: `npx tsx scripts/generate-historical-reports.ts` regenerates any
+  missing reports (skip ones that already exist unless `--force`), and prints a summary table.
+
+### 3. API routes
+- `GET /api/historical` → the aggregate analysis (findings, coverage, confidence distribution).
+- `GET /api/historical/[slug]` → one incident's findings + metadata.
+- `GET /api/historical/[slug]/report` → `{ markdown, mermaid, generatedBy, caseId }`.
+Follow the conventions in `packages/web/app/api/_lib.ts` and the existing `[slug]` routes.
+
+### 4. UI — `packages/web/app/historical/page.tsx` and `packages/web/app/historical/[slug]/page.tsx`
+- `/historical` — "Historical analysis": the 16 real incidents analysed by our engine, with a
+  coverage panel (reproducible vs retrospective-only), a confidence distribution, a table of
+  findings per incident (severity chip, vector chip, Bible pattern, confidence bar, links), and a
+  clear honest note that the analysis is retrospective classification over public records, and the
+  reproductions are local Foundry simulations.
+- `/historical/[slug]` — the full AI forensic report for one incident: the 7 sections, the mermaid
+  diagram rendered with the existing `MermaidDiagram` component, the evidence reconstruction table
+  (local reproduction proof vs gap), the detector findings with their limitations, and the client
+  action plan.
+- Both pages must look excellent in DARK and LIGHT theme, obey RED-ROOM.md, use tokens only
+  (no raw hex), lucide-react icons only, no emoji, 4.5:1 contrast, 44px touch targets,
+  aria-labels on icon-only buttons, real `<button>`/`<a>` elements, and respect
+  `prefers-reduced-motion`.
+
+## HARD CONSTRAINTS
+- Do NOT `npm install` anything. No new dependencies.
+- `rm` is policy-gated on this machine — overwrite in place instead of deleting.
+- `npx tsc --noEmit` must pass with zero errors in your files.
+- Never fabricate a number. Every loss figure, tx id, address and date must come from
+  `packages/core/src/incidents.ts` or the Bible JSON. If the Bible and our registry disagree, say so
+  in the report.
+- If mcode cannot be reached, the fallback must be clearly labelled as deterministic — never
+  pretend a template is an AI report.
+
+## VERIFICATION (all of it, before you finish)
+1. `npx tsx scripts/generate-historical-reports.ts` — must produce at least 4 incident reports
+   (more is better) with a `generatedBy` value, each containing a ```mermaid block and all 7 sections.
+   Report the real `generatedBy` value you observed.
+2. `npx tsc --noEmit` — zero errors in your files.
+3. Confirm the API routes exist and the page compiles. The dev server runs on http://localhost:3000;
+   check your routes respond (e.g. `Invoke-RestMethod http://localhost:3000/api/historical`).
+   NOTE: the dev server may need a moment to pick up new routes — retry a couple of times.
+4. Write `docs/historical-analysis.md` — what the analysis does, how the mapping to the Bible works,
+   what is retrospective vs reproduced, and the limitations.
+
+Work autonomously. Do not ask questions. Do not stop early. Finish with a short report: files created,
+how many reports were AI-generated vs deterministic, the measured coverage numbers, and anything you
+could not complete.

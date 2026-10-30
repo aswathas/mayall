@@ -1,0 +1,168 @@
+# BRIEF — REMOTION INTRO PAGE + LIVE ATTACK TRACKER PAGE
+
+You are one of several parallel agents in `C:\Users\aswat\Projects\w3-forensics`.
+The product is **Mayall** — a Web3 exploit forensics tool that runs REAL Foundry exploit simulations,
+parses the real `forge -vvvv` call trace, runs 10 heuristic detectors, and emits a forensic report +
+evidence bundle.
+
+Two deliverables:
+- **A. An INTRO page built with REMOTION** — the full-page first impression, with a Remotion
+  composition embedded in the page (via `@remotion/player`) AND a Remotion-rendered MP4.
+- **B. A LIVE ATTACK TRACKER page** — a dedicated, real-time tracker of an attack in flight.
+
+READ FIRST:
+1. `docs/design/RED-ROOM.md` — the authoritative design + motion contract. Every rule binds you.
+2. `.claude/skills/motion-graphics/SKILL.md` — the motion-graphics skill. BINDING for the Remotion
+   composition and the animation code: storyboard before code, every frame a pure function of time,
+   no unseeded `Math.random()`, `document.fonts.ready` before the first frame, style as numbers, 5%
+   safe margin, the avoid list (no particle bursts, lens flares, neon glow, RGB split, glitch,
+   bouncy easing everywhere, decorative gradients, text that repeats the picture).
+3. `.agents/skills/animate/SKILL.md` — the animate skill. READ IT. Use it for the page-level motion
+   (the tracker, the intro transitions) — it has the recipes.
+4. `.agents/skills/design-taste-frontend/references/motion.md` — the motion reference (56 KB). Skim
+   the relevant sections for the easing/stagger vocabulary.
+5. `packages/web/app/globals.css` — the token system. TOKENS ONLY, no raw hex in components.
+   Dark theme: `--hx-panel #110b0d`, `--hx-edge #2b1a1e`, `--hx-edge-strong #3d2429`,
+   `--hx-ink #f7eded`, `--hx-ink-dim #c3a7aa`, `--hx-ink-faint #8f7276`, `--hx-arterial #ff3b30`,
+   `--hx-arterial-deep #b31f18`, `--hx-amber #f5b942`.
+6. `packages/web/components/AttackReplay.tsx` — the EXISTING canvas attack-replay piece (33 KB).
+   READ IT. The tracker page must feel like a sibling of it, not a clone. It is owned by another
+   agent: IMPORT/READ it, NEVER edit it.
+7. `packages/web/components/AppShell.tsx`, `Panel.tsx`, `MetricStrip.tsx`, `ThemeToggle.tsx` — read
+   the props. Import, never edit (AppShell is owned by another agent).
+8. `packages/core/src/index.ts` — domain types.
+
+## YOUR EXCLUSIVE FILE OWNERSHIP
+You own and may create/modify ONLY:
+- `packages/web/remotion/**`
+- `packages/web/remotion.config.ts`
+- `packages/web/components/Intro*.tsx`
+- `packages/web/components/Tracker*.tsx`
+- `packages/web/app/intro/page.tsx`
+- `packages/web/app/intro/loading.tsx`
+- `packages/web/app/tracker/page.tsx`
+- `packages/web/app/tracker/loading.tsx`
+- `packages/web/public/intro/**`  (the rendered MP4 + poster, served statically)
+- `scripts/remotion-render.mjs`
+- `docs/motion/intro-and-tracker.md`
+
+DO NOT edit: `packages/web/app/page.tsx` (the root route is owned by another agent — I will wire the
+intro in later), `packages/web/app/{incidents,lab,docs,cases,attack-lab,historical,evidence,bible,showcase}/**`,
+`packages/web/components/{AppShell,AttackReplay,TraceViewer,GasFlameChart,StorageDiffInspector,BalanceTimeline,PatternReport,MermaidDiagram,LiveSimPanel,SimSummary,EvidencePipelineFigure,ReportView,VectorBreakdown,ChainDonut,SeveritySplit,LossTimelineChart,IncidentTable,IncidentFilters,EngineStatus,Panel,MetricStrip,ThemeToggle}.tsx`,
+`packages/web/app/globals.css`, `packages/web/app/layout.tsx`, `packages/web/app/api/**`,
+`packages/forensic-engine/src/**`, `packages/core/**`, `packages/cli/**`, `contracts/**`, `data/**`,
+`docs/pitch/**`, `docs/design/**`, `packages/web/tests/**`, `scripts/qa/**`.
+If you need a change in a forbidden file, do NOT make it — note it in your final report.
+
+## DELIVERABLE A — THE INTRO PAGE (Remotion)
+
+### A1. Install Remotion
+```
+cd C:\Users\aswat\Projects\w3-forensics\packages\web
+npm i remotion @remotion/player
+npm i -D @remotion/cli
+```
+If the workspace install hoists to the root, that is fine — do NOT fight it. If the install fails
+(network), fall back to: build the intro animation with a hand-rolled canvas component that follows
+the SAME motion-graphics discipline (pure `draw(t)`, seeded randomness, `document.fonts.ready`,
+final-frame hold) and report clearly that Remotion was unavailable and why. Do NOT leave the repo in
+a broken install state — if `npm i` half-completes, restore it.
+
+### A2. The Remotion composition (`packages/web/remotion/`)
+- `Root.tsx` — registers the compositions.
+- `MayallIntro.tsx` — the main composition. Use Remotion primitives: `<Sequence>`, `<AbsoluteFill>`,
+  `<interpolate>`, `<spring>`, `useCurrentFrame()`, `useVideoConfig()`. Every frame MUST be a pure
+  function of the frame number — no `Math.random()` without a seeded generator, no state that
+  accumulates across frames.
+- A second composition, `MayallTrace`, that renders the forensic trace animation (the call tree
+  growing, the depth badges appearing, the detector firing) — this is the piece that matches the
+  existing `AttackReplay` piece in spirit.
+- Real data only. Use the measured facts: reentrancy drains **6 ETH**, `withdraw()` called **7×**
+  nested, **83-node** trace, Reentrancy detector confidence **97%**; the six scenarios drain
+  6 / 40 / 50 / 250 / 50 / 60 ETH; the registry covers **16** real public incidents, **~$2.39B**,
+  **5** chains, **16** attack vectors modelled, **10** detectors, **6** live reproductions.
+  Read `artifacts/summary.json` and the bundle `evidence/trace.txt` for the real trace text — do NOT
+  invent trace lines.
+
+### A3. Storyboard FIRST
+Write `docs/motion/intro-storyboard.md` BEFORE writing the composition: a shot list with start time,
+end time, what is on screen, what the viewer must read, and the transition out — exactly as the
+motion-graphics skill requires. Then implement to it. Hook inside the first second. Something happens
+in every shot. Hold the final frame 0.8–1.2 s.
+
+### A4. Render the MP4 with Remotion
+```
+cd C:\Users\aswat\Projects\w3-forensics\packages\web
+npx remotion render <entry> MayallIntro out/intro.mp4 --props=... 
+```
+You need a `remotion.config.ts` and a registered entry file. Remotion needs a browser — it uses
+Chrome via `browserExecutable`; if auto-detection fails, point it at the installed Chrome
+(`C:\Program Files\Google\Chrome\Application\chrome.exe`) or set `REMOTION_BROWSER_EXECUTABLE`.
+Output to `packages/web/public/intro/mayall-intro.mp4` plus a poster PNG.
+Target: 1920×1080, 30 fps, ~14–18 s.
+If Remotion rendering proves impossible in this environment, ship the `@remotion/player`-embedded
+page (which still needs no server-side render) AND ALSO produce the MP4 via the already-working
+path: `scripts/claude-video-render.mjs` (a virtual-clock frame-by-frame renderer for `scene.html`)
+— copy it to `scripts/` usage and drive a `scene.html` that mirrors the composition. Report which
+path you used.
+
+### A5. The intro page — `packages/web/app/intro/page.tsx`
+A FULL-PAGE first impression. Structure:
+- A full-bleed hero holding the Remotion `<Player>` (from `@remotion/player`) playing the intro
+  composition, with `loop` and `controls` configured, respecting `prefers-reduced-motion` (when
+  reduced motion is on, do not autoplay — show the poster frame instead).
+- The wordmark **Mayall** and a single honest positioning line.
+- The product's real capability: real Foundry simulations, real traces, heuristic detectors, a
+  forensic report and a downloadable evidence bundle with a SHA-256 chain of custody.
+- A clear honest line: **local Foundry simulation, not mainnet evidence**.
+- CTAs into the real routes: `/attack-lab` (custom live run), `/tracker`, `/lab`, `/historical`,
+  `/bible`, `/showcase`, `/docs`, and the evidence bundle.
+- Below the hero: the real numbers (from `artifacts/summary.json` / the API), the six scenarios with
+  their losses and detector confidences, and what the pipeline actually does (raw → parsed trace →
+  detectors → report → bundle).
+- It must be a FULL PAGE, not a splash. It is the first impression for hackathon judges.
+- Obey RED-ROOM.md: no kicker/eyebrow above headings, no hero-metric card grid, no nested panels,
+  no gradient text, no coloured `border-left` > 1px, no ghost cards, no emoji, no mono-as-costume,
+  tokens only, no raw hex, no component branches on theme.
+- Dark theme first AND correct in light theme.
+
+## DELIVERABLE B — THE LIVE ATTACK TRACKER PAGE
+
+`packages/web/app/tracker/page.tsx` — a dedicated tracker of an attack in flight.
+- A left rail: the live status of every scenario (idle / running / complete) polled from the API.
+- The main stage: the attack in motion. Use the EXISTING `AttackReplay` component (import it) and
+  your new `Tracker*.tsx` components for the surrounding instrumentation: a live gas meter, a
+  running balance readout, a depth gauge, and a running list of trace nodes as they appear.
+- Data sources: `/api/scenarios`, `/api/status`, and the artifacts on disk. If a live SSE endpoint
+  exists at `/api/custom/stream` (another agent is building it), consume it for a genuine live
+  stream; if it does not exist yet, poll the artifacts instead and show a "replay" mode honestly.
+- The tracker must show REAL numbers, never mock values. If no run is active, say so and offer a
+  "Start a run" link to `/attack-lab`.
+- The animation must be one coherent authored moment, respect `prefers-reduced-motion`, use
+  `animate` skill vocabulary, and never fight the existing `AttackReplay` piece.
+
+## HARD CONSTRAINTS
+- Do NOT add any dependency OTHER than `remotion`, `@remotion/player`, `@remotion/cli`.
+- `rm` is policy-gated on this machine — write new files, overwrite rather than delete.
+- `npx tsc --noEmit` (from `packages/web`) must pass with zero errors in your files.
+- No emoji, no raw hex in components, lucide-react icons only, 44px touch targets, aria-labels on
+  icon-only buttons, real `<button>`/`<a>`, focus rings never removed, 4.5:1 contrast.
+- The product name is **Mayall**. Never write "HELIX" in user-visible copy.
+- Never claim this is mainnet evidence.
+
+## VERIFICATION (all of it, before you finish)
+1. `npx tsc --noEmit` — zero errors in your files.
+2. `npx remotion compositions` (or `npx remotion studio --help` check) shows your compositions.
+3. The MP4 exists: report its real path, size, and `ffprobe` numbers (duration, fps, resolution).
+   `ffprobe` is at `C:\Users\aswat\AppData\Local\Microsoft\WinGet\Links\ffprobe.exe` and is on PATH.
+4. `Invoke-WebRequest http://localhost:3000/intro -UseBasicParsing` → 200 and the HTML contains
+   "Mayall". Same for `/tracker`. (New routes need a few seconds to compile — retry.)
+5. Screenshot BOTH pages in BOTH themes and LOOK at the PNGs with the read tool:
+   `npx tsx scripts/shoot.ts intro /intro 1440 1000 dark` then `... light`, and the same for
+   `/tracker`. Read `scripts/shoot.ts` first for the exact argument order. Fix anything broken —
+   especially layout overflow, clipped text, and light-theme contrast.
+6. Write `docs/motion/intro-and-tracker.md`.
+
+Work autonomously. Do not ask questions. Do not stop early. Finish with a short report: files created,
+whether Remotion installed and rendered, the real MP4 + ffprobe numbers, the storyboard as built, and
+anything you could not complete.

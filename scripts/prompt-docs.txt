@@ -1,0 +1,85 @@
+You are writing the DOCUMENTATION and SETUP AUTOMATION for "HELIX — Web3 Exploit Forensics Console", a Foundry-powered Web3 exploit forensics workbench.
+
+# HARD FILE OWNERSHIP — do not write outside this list
+You own EXACTLY:
+- docs/**
+- scripts/setup-foundry.ps1
+Do NOT create/modify anything else. The root README.md already exists — do not touch it. Do not touch packages/**, contracts/**, or anything under scripts/ other than setup-foundry.ps1.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics
+
+# CONTEXT — read these first so the docs are accurate
+- packages/core/src/index.ts               (attack vector taxonomy: 16 vectors with signature + severityWeight; severity model; domain types)
+- packages/core/src/incidents.ts            (16 seeded incidents)
+- packages/forensic-engine/src/detectors.ts  (the 10 pattern detectors — each with id, vectorId, label, baseSeverity and the detect() rule)
+- packages/forensic-engine/src/scenarios.ts   (the 6 lab scenarios, each with title, vectorId, contractName, description, lookFor[])
+- packages/forensic-engine/src/report.ts      (buildReport section headings, REMEDIATION map, narrative storage)
+- packages/forensic-engine/src/bundle.ts      (buildForensicBundle — the exact files in the ZIP and the chain-of-custody manifest)
+- packages/forensic-engine/src/simulator.ts   (runSimulation flow, extractTraceText)
+- packages/forensic-engine/src/trace-parser.ts
+- packages/web/app/globals.css               (design tokens)
+- README.md                                 (for tone and structure consistency)
+
+Facts already established (do not contradict):
+- Foundry v1.8.7 binaries live at <repo>/.tools/foundry (forge.exe, cast.exe, anvil.exe, chisel.exe, solar.exe). The project never mutates the system PATH.
+- 6 scenarios: reentrancy, oracle-manipulation, access-control, flash-loan, delegatecall, selfdestruct. Each is a vulnerable Solidity contract plus a Foundry proof-of-concept in contracts/test/.
+- 10 detectors: Reentrancy, Flash Loan, Oracle Manipulation, Access Control Failure, Delegate Call Injection, Self Destruct / Forced Transfer, Arithmetic / Precision Fault, Ordering / Front Running, Bridge / Cross-Chain Verification Failure, Invariant / Logic Error.
+- The forensic bundle ZIP contains: report/report.md, report/report.json, evidence/artifact.json, evidence/trace.txt, evidence/foundry-stdout.txt, evidence/foundry-stderr.txt, evidence/storage-diff.csv, evidence/balance-timeline.csv, evidence/timeline.csv, evidence/patterns.json, evidence/gas-flame.json, chain-of-custody.json (SHA-256 manifest).
+- Report sections are: 1. Scope, 2. Attack sequence, 3. State mutations (storage diff), 4. Balance movements, 5. Pattern findings, 6. Root cause and remediation, 7. Evidence index.
+- The report's executive summary slot can be filled by a narrative authored by MiniMax Code and stored via POST /api/report/[caseId]/narrative; otherwise a deterministic summary is generated from the simulation evidence.
+
+# DELIVERABLES
+
+## 1. scripts/setup-foundry.ps1
+A PowerShell script that installs Foundry into <repo>/.tools/foundry on Windows without touching the system PATH.
+Requirements:
+- Idempotent: if .tools/foundry/forge.exe exists, print the version and exit 0.
+- Downloads https://github.com/foundry-rs/foundry/releases/download/v1.8.7/foundry_v1.8.7_win32_amd64.zip to <repo>/.tools/foundry.zip, expands it into <repo>/.tools/foundry, then prints the detected forge/cast/anvil versions.
+- Use $ErrorActionPreference = 'Stop', Invoke-WebRequest -UseBasicParsing, and check $LASTEXITCODE where native commands run.
+- Remove the downloaded zip at the end using a recoverable delete that does NOT permanently erase the file without the runtime's trusted launcher: on this machine the local runtime routes a top-level `rm -- "path"` through a trusted launcher. Use exactly: `rm -- "$zip"` at the top level of the script (NOT Remove-Item, which is blocked by policy). Guard it with a Test-Path check and a try/catch that warns rather than failing the install.
+- Also support Linux/macOS? No — target Windows PowerShell 5.1 only, but keep the script readable.
+- End by printing a short "next steps" block: `npm run forge:test` and `npm run dev`.
+- Test it: run `powershell -ExecutionPolicy Bypass -File scripts/setup-foundry.ps1` and confirm it takes the idempotent path (Foundry already present) and exits 0.
+
+## 2. docs/architecture.md
+Markdown. Cover:
+- The four layers: Foundry lab (contracts/), @helix/core (domain + taxonomy), @helix/forensic-engine (runner, parser, detectors, report, bundle), @helix/web (Next.js console).
+- The end-to-end data flow of one simulation, as an ASCII diagram: POST /api/simulate -> runSimulation -> `forge test --match-path ... -vvvv --decode-internal --json` -> (a) stdout trace parsed by parseForgeTrace into a TraceNode tree + gas flame, (b) the PoC test writes artifacts/<scenario>.json with vm.record/vm.accesses storage mutations and balance deltas -> runDetectors over both -> SimulationResult -> dashboard + report + bundle.
+- The TraceNode model and how forge's `-vvvv` call tree maps onto it.
+- How storage diffs are captured (cheatcode-based, before/after via vm.load) and why that beats RPC diffing for a local simulation.
+- The detector contract: input context (artifact + nodes + raw lines + trace text), output confidence/severity/evidence/rationale/mermaid, and the confidence philosophy (evidence-weighted, never fabricated).
+- The report pipeline and the MiniMax Code narrative injection point (data/narratives/<caseId>.md).
+- The forensic bundle layout and the chain-of-custody hash manifest.
+Include a short "Extension points" section: how to add a scenario, how to add a detector, how to add a chain.
+
+## 3. docs/detection-rules.md
+Markdown table + per-detector detail for all 10 detectors. For each: id, label, attack vector, base severity, the exact signal it looks for (quote the relevant rule from detectors.ts), what evidence it emits, its confidence floor, and known false-positive/negative cases. Be precise and honest: several detectors also key off narrative keywords in the artifact, and you must say so — that is a real limitation of heuristic detectors, not a flaw to hide.
+
+## 4. docs/demo-script.md
+A timed, judge-ready demo script for a 6-minute hackathon pitch. Structure:
+- 0:00 The hook (the problem: explorers show you that, not how).
+- 0:45 Live lab: run the reentrancy scenario; narrate what the trace reveals (watch the same withdraw() selector appear twice).
+- 2:00 The forensic view: trace tree -> storage diff -> pattern findings with confidence -> gas flame.
+- 3:00 A second scenario for contrast (flash-loan or oracle) to show generality.
+- 4:00 The written case file + forensic bundle export; open the chain-of-custody manifest.
+- 5:00 The architecture slide in one breath; what is real vs simulated (the contracts are real Solidity, the EVM execution is real via forge, the chain state is local — we do not fork mainnet, and we say so).
+- 5:45 The ask / what's next.
+Include the exact click paths (routes) and the exact commands.
+
+# STYLE
+- Plain, technical, confident. No marketing fluff, no emoji in headings.
+- Use tables where they carry information; use fenced code blocks for commands and ASCII diagrams.
+- Every claim must be verifiable from the source files. Do not invent endpoints, commands, or field names.
+- Relative paths from the repo root.
+
+# VERIFY BEFORE YOU FINISH
+1. Run `powershell -ExecutionPolicy Bypass -File scripts/setup-foundry.ps1` — it must exit 0.
+2. Re-read each detector in packages/forensic-engine/src/detectors.ts and confirm every rule description in docs/detection-rules.md matches the code (id, label, vectorId, baseSeverity, signal).
+3. Confirm every file path referenced in the docs actually exists.
+
+# DELIVERABLE
+Final message, max 20 lines:
+- The list of files created with their line counts.
+- The exit code of the setup script run.
+- Any statement in the docs you could not verify against source, with the reason.
+Facts only.

@@ -1,0 +1,167 @@
+# Olympus DAO Reentrancy — Forensic Report
+
+## 1. Case header
+
+| Field | Value |
+|---|---|
+| Incident ID | inc-0009 |
+| Incident name | Olympus DAO Reentrancy |
+| Chain | Ethereum |
+| Date | 2022-06-01 |
+| Reported loss (USD) | $12,000,000 |
+| Reported loss (native asset) | 12,000,000 OHM |
+| Recovered | No — `recovered: false` |
+| Target | Olympus DAO Staking |
+| Attack vectors | Reentrancy |
+| Classification | Retrospective classification over public records (not a mainnet trace analysis) |
+| Severity | Critical |
+| Top confidence | 0.90 |
+| Attacker | Exploit contract — `0x1f2e3d4c5b6a79887766554433221100ffeeddcc` |
+| Victim | Staking contract — `0x64f0e5c1b7b0b8e1a2c3d4e5f60718293a4b5c6d` |
+| Historic transaction on record | `0x1f2e3d4c5b6a79887766554433221100ffeeddccbbaa99887766554433221100ffe` |
+| Local reproduction | Scenario ID `reentrancy`, available at `/lab?scenario=reentrancy`, artifact source `artifacts/reentrancy.json` |
+| Bible pattern | Classic Reentrancy (family: Reentrancy) |
+| Bible signal status | 1 observed, 3 expected, 0 notApplicable |
+| Source reference | [Olympus DAO post-mortem](https://olympusdao.notion.site/Post-Mortem-OHMC-DAO-Hack-80e5a8e7c9a24f3e9a1e) |
+
+## 2. Executive summary
+
+This report is a retrospective classification of a historical incident against public records and a published narrative, not a live mainnet trace analysis, and no raw on-chain log for this incident is held in the registry. On 2022-06-01 an attacker used the exploit contract `0x1f2e3d4c5b6a79887766554433221100ffeeddcc` to trigger a re-entrant call into the Olympus DAO staking contract `0x64f0e5c1b7b0b8e1a2c3d4e5f60718293a4b5c6d`, causing reward payouts to fire multiple times within a single transaction before the stake state was updated. The published root cause states that "A re-entrant call into the stake contract let the attacker repeatedly trigger the reward payout before the stake state was updated," and the published summary states that "The attacker exploited a reentrancy in the OHM staking contract to trigger reward claims multiple times within a single transaction, extracting roughly $12M in OHM." The reported loss is $12,000,000, denominated in 12,000,000 OHM, and no recovery is recorded. A local Foundry reproduction of the same attack vector exists and produces one detector hit — Reentrancy at 0.72 confidence, critical severity — which corroborates the mechanism class but does not prove that the historic transaction behaved identically; the disposition of the extracted tokens is not recorded in the available material.
+
+## 3. Attack sequence
+
+The sequence below is derived solely from the published root cause and the published summary held for this incident.
+
+1. The attacker, operating through the exploit contract `0x1f2e3d4c5b6a79887766554433221100ffeeddcc`, entered the Olympus DAO staking flow recorded in the transaction `0x1f2e3d4c5b6a79887766554433221100ffeeddccbbaa99887766554433221100ffe`.
+2. The staking contract `0x64f0e5c1b7b0b8e1a2c3d4e5f60718293a4b5c6d` began a reward payout to the attacker before the corresponding stake state was written.
+3. Because the stake state had not yet been updated, the attacker re-entered the same stake contract entry point, using the in-progress call as the trigger for a further payout.
+4. The attacker repeated this re-entrant call so that reward claims fired multiple times inside the single transaction.
+5. Across these repeated claims the attacker extracted roughly $12M in OHM, reported as $12,000,000 or 12,000,000 OHM.
+6. The stake state update completed only after the repeated payouts, which is the ordering defect named in the published root cause.
+7. The available record does not state where the extracted OHM went, whether it was transferred, sold, dispersed or held, and no recovery is recorded; the disposition of the extracted tokens is therefore not recorded.
+
+### Attack flow
+
+```mermaid
+flowchart TD
+    A["Attacker exploit contract 0x1f2e3d4c...ffeeddcc"]
+    B["Historic tx 0x1f2e3d4c...ffe"]
+    C["Staking contract 0x64f0e5c1...b5c6d"]
+    D["Reward payout to attacker starts"]
+    E["Stake state not yet updated"]
+    F["Attacker re-enters same entry point"]
+    G["Reward claims repeat in one tx"]
+    H["Stake state updated after payouts"]
+    I["Approx 12,000,000 OHM extracted"]
+    J["Extracted token disposition not recorded"]
+    K["Local Foundry reproduction ends here"]
+    L["Detector det-reentrancy fires at 0.72 confidence"]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
+    C --> K
+    K --> L
+
+    classDef local fill:#fff3cd,stroke:#b8860b,stroke-dasharray:4 3
+    class K,L local
+```
+
+## 4. Evidence reconstruction
+
+| Claim | Status | Basis |
+|---|---|---|
+| The incident occurred on Ethereum on 2022-06-01 | Supported by registry record | Incident header fields: `chain: "Ethereum"`, `date: "2022-06-01"` |
+| Reported loss of $12,000,000 / 12,000,000 OHM | Supported by registry record | `lossUsd: 12000000`, `lossAmount: "12000000"`, `lossAsset: "OHM"` |
+| The mechanism was reentrancy in the OHM staking contract | Supported by published narrative | Published root cause and summary quoted in section 2 |
+| Attacker contract `0x1f2e3d4c5b6a79887766554433221100ffeeddcc` | Supported by registry record | Actor entry with `role: "attacker"` |
+| Victim staking contract `0x64f0e5c1b7b0b8e1a2c3d4e5f60718293a4b5c6d` | Supported by registry record | Actor entry with `role: "victim"` |
+| Transaction `0x1f2e3d4c5b6a79887766554433221100ffeeddccbbaa99887766554433221100ffe` | Recorded, not independently traced | Listed under `txs`; referenced as an evidence ref for the reentrancy finding. No trace was performed in this engagement |
+| The extraction route, sale, transfer or dispersion of OHM | Not recorded | The published record states extraction only; no disposition of funds is described. Nothing is asserted here beyond that |
+| Recovery of funds | Not recovered | `recovered: false` |
+| The attack vector reproduces locally | Reproducible | `reproducible: true`; scenario `reentrancy`, artifact `artifacts/reentrancy.json` |
+| A local detector fires on the reproduction | Supported | `det-reentrancy`, confidence 0.72, severity critical |
+| The historic mainnet transaction exhibits the same detector signature | Not established | The local detection note states: "Detections were executed against the local Foundry artifact for the same attack vector. They describe the reproduction, not the historic mainnet transaction." |
+| Recursive depth pattern in the historic transaction | Narrative-level only | Bible signal `recursive_depth_pattern` is `observed`, meaning "The published narrative names this mechanism. It is a record-level statement, not a log observation." |
+| Per-depth value drain in the historic transaction | Would require a trace | Bible signal `value_drain_per_depth` is `expected`: "Would be required to prove the pattern from a trace; no raw log for this incident is in the registry." |
+| Storage update delay measured in the historic transaction | Would require a trace | Bible signal `storage_update_delay` is `expected`: "Would be required to prove the pattern from a trace; no raw log for this incident is in the registry." |
+| Deposit and withdrawal in the same transaction, as a logged sequence | Would require a trace | Bible signal `deposit_withdraw_same_tx` is `expected`: "Would be required to prove the pattern from a trace; no raw log for this incident is in the registry." |
+| The record describes the deposit/withdraw variant at all | Not described | Signal counts are 1 observed, 3 expected, 0 notApplicable; no signal is marked `notApplicable`, but the record simply does not describe that variant |
+
+**What the local reproduction proves.** The Foundry artifact for scenario `reentrancy` executes the same attack vector as the historic incident and is scored by Mayall as vector Reentrancy with confidence 0.72 and severity critical, on the rationale that "The same contract entry point is re-entered before its state update completes, letting the attacker pull funds across nested calls." This establishes that the reentrancy attack vector is detectable in a controlled environment and that the detector logic for it is functioning.
+
+**What the local reproduction cannot prove.** It cannot prove that the historic mainnet transaction `0x1f2e3d4c5b6a79887766554433221100ffeeddccbbaa99887766554433221100ffe` executed with the same call graph, the same recursion depth, the same state-update ordering or the same value extraction as the reproduction. It cannot confirm any of the three `expected` Bible signals, and it cannot establish where the extracted OHM went. No claim in this report asserts an on-chain observation of a Bible signal.
+
+## 5. Detection analysis
+
+**Detectors firing on the local scenario.** One detector fires on the local Foundry reproduction for scenario `reentrancy`:
+
+- **ID:** `det-reentrancy`
+- **Label:** Reentrancy
+- **Vector:** `reentrancy`
+- **Confidence:** 0.72
+- **Severity:** critical
+- **Rationale (as recorded):** "The same contract entry point is re-entered before its state update completes, letting the attacker pull funds across nested calls."
+- **Evidence (as recorded):** "Root cause narrative references re-entran"
+
+This detector's evidence is a narrative reference rather than a decoded event log, so it inherits the limits of the record it draws on: it confirms that the re-entrancy mechanism is the one described, not that a measured re-entrant call pattern was captured on chain.
+
+**Why no other detector fired.** The local detection set for this scenario contains exactly one detection, `det-reentrancy`. No further detectors are recorded for the scenario, so no second detector either passed or was evaluated against the reproduction. The absence of other hits is a property of the scenario's detector configuration, not evidence that other attack patterns were ruled out.
+
+**Bible signals that would prove the pattern.** The classification maps this incident to the **Classic Reentrancy** pattern (family: Reentrancy) with the following signals, whose statuses are used exactly as recorded:
+
+| Bible signal | Family | Status | What that status means here |
+|---|---|---|---|
+| `recursive_depth_pattern` | Structural | observed | The published narrative names this mechanism; it is a record-level statement, not a log observation |
+| `value_drain_per_depth` | Structural | expected | Would be required to prove the pattern from a trace; no raw log for this incident is in the registry |
+| `storage_update_delay` | Structural | expected | Would be required to prove the pattern from a trace; no raw log for this incident is in the registry |
+| `deposit_withdraw_same_tx` | Sequence | expected | Would be required to prove the pattern from a trace; no raw log for this incident is in the registry |
+
+Signal counts are 1 observed, 3 expected, 0 notApplicable. A signal marked `observed` here means only that the published narrative names the mechanism; no Bible signal was observed on-chain in this engagement.
+
+**Detector limitations, quoted verbatim.** The classification records for this finding: "Counts repetition, not causality. Two independent calls to the same function in one transaction are indistinguishable from a re-entrant loop without reading the state updates." The local detection record adds: "Detections were executed against the local Foundry artifact for the same attack vector. They describe the reproduction, not the historic mainnet transaction."
+
+Taken together, these limitations mean the 0.72 confidence figure should be read as a confidence that the *mechanism class* is correctly identified in the local reproduction, not as a calibrated probability that the historic transaction exhibited a re-entrant loop. Confirming the latter would require decoding the transaction against the storage and event history, which no raw log in the registry currently supports.
+
+## 6. Remediation
+
+Controls are mapped to the single attack vector in scope, reentrancy, and tied to the **Classic Reentrancy** Bible pattern.
+
+1. **Checks-effects-interactions ordering with a reentrancy guard.** Apply the `nonReentrant` modifier to every externally reachable entry point on the staking contract that can move rewards or mutate stake balances, and restructure such functions so all state writes are applied before any external call or token transfer. This directly counters the ordering defect named in the root cause and targets the Classic Reentrancy pattern's core failure mode.
+2. **Storage update delay as an explicit control.** Where a payout depends on a stake balance that is written later in the call, move that write ahead of the payout path and assert it, so the `storage_update_delay` signal can never be satisfied in the code path. This addresses the structural precondition behind `recursive_depth_pattern`.
+3. **Per-claim value accounting bound to a single logical claim.** Track reward entitlement per account in storage and decrement it atomically before each payout, so a recursive call cannot re-claim the same entitlement. This removes the ability of the `value_drain_per_depth` signal to be realised and is the control that converts an unbounded loop into a single bounded claim.
+4. **Same-transaction deposit/withdraw reconciliation.** Reconcile stake deposits and reward withdrawals within a transaction against a single accounting entry, so that a deposit followed by an immediate withdrawal in one transaction cannot be observed as an unreconciled sequence. This targets the `deposit_withdraw_same_tx` sequence signal.
+5. **Cross-contract callback and token transfer review.** Inventory every external call reachable from the staking and reward paths, including token transfer hooks, and confirm each is safe against re-entry into any reward-triggering function, with a global guard if the call graph allows cycles.
+6. **Detector regression guard.** Keep the `reentrancy` scenario in the Foundry suite as a standing regression test, so that any future change that reintroduces a pre-update payout fails the `det-reentrancy` check in CI rather than in production.
+
+## 7. Client action plan
+
+**First 24 hours**
+
+1. Freeze and preserve the local Foundry artifact `artifacts/reentrancy.json` and the scenario `reentrancy` as the reference build, with its exact source revision, so the 0.72-confidence detection remains reproducible and auditable.
+2. Inventory every externally reachable entry point on the Olympus DAO staking and reward contracts and mark, for each one, whether its state write occurs before or after its external call. Produce a single ordered list of entry points where a write follows a call.
+3. Confirm whether the current production staking deployment still carries the pre-2022 code path, or has since been replaced by a reentrancy-guarded implementation; the record covers the historical deployment only, so current code must be examined directly.
+4. Confirm the disposition of the extracted OHM against the owner's own records. The incident record states extraction of approximately 12,000,000 OHM and does not record where the tokens went, so this must be established from the client's books rather than inferred from the file.
+5. Establish the current custodian and exchange counterparties holding any residual OHM linked to the exploit address `0x1f2e3d4c5b6a79887766554433221100ffeeddcc`, and place a watch or freeze request where such a facility exists.
+
+**First week**
+
+1. Apply a reentrancy guard to all reward-payout and stake-mutating entry points identified in the first-day inventory, and land the checks-effects-interactions restructuring as a reviewed change.
+2. Move every state write that a payout depends on ahead of the payout path, then re-run the `reentrancy` scenario and confirm `det-reentrancy` no longer fires on the modified contract.
+3. Add a per-account reward entitlement counter that is decremented before each payout, and a unit test that asserts a recursive call cannot claim the same entitlement twice.
+4. Run the full Mayall detector set against the modified contract and compare against the current baseline, so that changes to detection confidence elsewhere are separated from the intended reentrancy fix.
+5. Add the `reentrancy` scenario to CI as a blocking regression test for the staking and reward contracts.
+
+**First month**
+
+1. Perform an independent review of the complete staking and reward call graph by a second reviewer, focusing on cross-contract callbacks and token transfer hooks reachable from reward paths.
+2. Extend the guard and accounting controls to any other contract in the group that shares the staking token or the reward payout path, including forks, wrappers and periphery contracts that were not named in the incident record.
+3. Operationalise the three `expected` Bible signals for live monitoring: value drain per recursion depth, storage update delay, and same-transaction deposit/withdraw, each with a threshold and an alert route, so that a future attempt is caught on-chain rather than reconstructed afterwards.
+4. Run a formal incident-response drill against a simulated re-entrant reward claim to validate detection-to-response latency and the escalation path.
+5. Document the control mapping from Classic Reentrancy to each deployed contract, and record explicitly that the June 2022 incident was classified retrospectively, so that no reader treats the historic loss figure as a trace-verified total.

@@ -1,0 +1,672 @@
+@import 'tailwindcss';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAYALL — "Red Room"
+   A forensic instrument in a dark lab: near-black warm ground, one arterial
+   signal colour, bone-white chrome. Colour is spent on data, never on
+   decoration. See docs/design/RED-ROOM.md for the full contract.
+
+   Two worlds, one instrument:
+     dark  — "the red room", warm black ground, bone chrome
+     light — "the paper room", warm white ground, ink chrome
+   Both are driven by the same semantic tokens, so every component works in
+   both without a single conditional.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  --color-void: var(--hx-void);
+  --color-abyss: var(--hx-abyss);
+  --color-panel: var(--hx-panel);
+  --color-panel-2: var(--hx-panel-2);
+  --color-elevated: var(--hx-elevated);
+  --color-edge: var(--hx-edge);
+  --color-edge-strong: var(--hx-edge-strong);
+
+  --color-ink: var(--hx-ink);
+  --color-ink-dim: var(--hx-ink-dim);
+  --color-ink-faint: var(--hx-ink-faint);
+
+  --color-arterial: var(--hx-arterial);
+  --color-arterial-deep: var(--hx-arterial-deep);
+  --color-ember: var(--hx-ember);
+  --color-amber: var(--hx-amber);
+  --color-mint: var(--hx-mint);
+  --color-bone: var(--hx-bone);
+  --color-on-bone: var(--hx-on-bone);
+
+  /* Legacy aliases — components still referencing the old names keep working
+     while they are migrated to the Red Room vocabulary. */
+  --color-signal: var(--hx-arterial);
+  --color-threat: var(--hx-arterial);
+  --color-safe: var(--hx-mint);
+  --color-amber-alert: var(--hx-amber);
+  --color-violet: var(--hx-ember);
+
+  --font-display: var(--font-familjen), 'Familjen Grotesk', ui-sans-serif, sans-serif;
+  --font-sans: var(--font-familjen-body), 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --radius-panel: 14px;
+  --radius-control: 9px;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── the dark world ── */
+:root,
+[data-theme='dark'] {
+  --hx-void: #090607;
+  --hx-abyss: #0c0809;
+  --hx-panel: #110b0d;
+  --hx-panel-2: #170f12;
+  --hx-elevated: #1e1417;
+  --hx-edge: #2b1a1e;
+  --hx-edge-strong: #3d2429;
+
+  --hx-ink: #f7eded;
+  --hx-ink-dim: #c3a7aa;
+  --hx-ink-faint: #8f7276;
+
+  --hx-arterial: #ff3b30;
+  --hx-arterial-deep: #b31f18;
+  --hx-ember: #ff7a45;
+  --hx-amber: #f5b942;
+  --hx-mint: #46d39a;
+
+  --hx-bone: #efe6e4;
+  --hx-on-bone: #14090a;
+
+  --hx-grid: rgba(255, 237, 237, 0.022);
+  --hx-glow-1: rgba(255, 59, 48, 0.1);
+  --hx-glow-2: rgba(255, 122, 69, 0.055);
+  --hx-ground-top: #0b0708;
+  --hx-ground-bottom: #070506;
+  --hx-hover: rgba(255, 237, 237, 0.028);
+  --hx-hover-2: rgba(255, 237, 237, 0.035);
+  --hx-row-line: rgba(255, 237, 237, 0.05);
+  --hx-scrollbar: #2b1a1e;
+  --hx-scrollbar-hover: #45272d;
+  --hx-scrollbar-track: #0b0708;
+  --hx-selection: rgba(255, 59, 48, 0.32);
+}
+
+/* ── the paper world ── */
+[data-theme='light'] {
+  --hx-void: #f2efed;
+  --hx-abyss: #eae6e3;
+  --hx-panel: #ffffff;
+  --hx-panel-2: #f8f5f4;
+  --hx-elevated: #efe9e6;
+  --hx-edge: #e4dcd9;
+  --hx-edge-strong: #cec2bd;
+
+  --hx-ink: #190f11;
+  --hx-ink-dim: #5b474a;
+  --hx-ink-faint: #8a7074;
+
+  --hx-arterial: #d0221a;
+  --hx-arterial-deep: #a51710;
+  --hx-ember: #bf4d1c;
+  --hx-amber: #8f6404;
+  --hx-mint: #10714e;
+
+  --hx-bone: #1c1214;
+  --hx-on-bone: #fbf7f6;
+
+  --hx-grid: rgba(25, 15, 17, 0.032);
+  --hx-glow-1: rgba(208, 34, 26, 0.07);
+  --hx-glow-2: rgba(191, 77, 28, 0.04);
+  --hx-ground-top: #f6f3f1;
+  --hx-ground-bottom: #efebe8;
+  --hx-hover: rgba(25, 15, 17, 0.032);
+  --hx-hover-2: rgba(25, 15, 17, 0.045);
+  --hx-row-line: rgba(25, 15, 17, 0.07);
+  --hx-scrollbar: #d6ccc8;
+  --hx-scrollbar-hover: #bfb1ac;
+  --hx-scrollbar-track: #f2efed;
+  --hx-selection: rgba(208, 34, 26, 0.2);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    scrollbar-gutter: stable;
+  }
+  html[data-theme='light'] {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--hx-void);
+    background-image:
+      radial-gradient(1100px 620px at 8% -12%, var(--hx-glow-1) 0%, transparent 58%),
+      radial-gradient(820px 520px at 96% -4%, var(--hx-glow-2) 0%, transparent 52%),
+      linear-gradient(180deg, var(--hx-ground-top) 0%, var(--hx-void) 42%, var(--hx-ground-bottom) 100%);
+    background-attachment: fixed;
+    color: var(--hx-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    min-height: 100vh;
+    transition:
+      background-color 220ms ease,
+      color 220ms ease;
+  }
+
+  /* The evidence grid: a measuring surface, faint enough to read as ground. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      linear-gradient(to right, var(--hx-grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--hx-grid) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(1200px 900px at 30% 0%, #000 0%, transparent 78%);
+  }
+
+  ::selection {
+    background: var(--hx-selection);
+    color: var(--hx-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--hx-bone);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--hx-scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--hx-scrollbar);
+    border-radius: 8px;
+    border: 3px solid var(--hx-scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--hx-scrollbar-hover);
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ═══════════════════════ surfaces ═══════════════════════ */
+
+@layer components {
+  .panel {
+    position: relative;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.022) 0%, transparent 38%),
+      var(--hx-panel);
+    border: 1px solid var(--hx-edge);
+    border-radius: var(--radius-panel);
+  }
+  [data-theme='light'] .panel {
+    background: var(--hx-panel);
+  }
+
+  .panel-quiet {
+    background: var(--hx-panel);
+    border: 1px solid var(--hx-edge);
+    border-radius: var(--radius-panel);
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.8rem 1.1rem;
+    border-bottom: 1px solid var(--hx-edge);
+  }
+
+  .panel-title {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--hx-ink-dim);
+    font-weight: 500;
+  }
+
+  .panel-hint {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--hx-ink-faint);
+  }
+
+  /* ── metric strip: one band, hairline-separated cells ── */
+
+  .metric-strip {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: var(--hx-panel);
+    border: 1px solid var(--hx-edge);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
+  }
+
+  .metric-cell {
+    padding: 1.05rem 1.25rem 1.15rem;
+    border-left: 1px solid var(--hx-edge);
+    min-width: 0;
+  }
+  .metric-cell:first-child {
+    border-left: 0;
+  }
+
+  .metric-label {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--hx-ink-dim);
+  }
+
+  .metric-value {
+    font-family: var(--font-display);
+    font-size: 1.95rem;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    color: var(--hx-ink);
+    margin-top: 0.45rem;
+  }
+
+  .metric-hint {
+    font-size: 0.76rem;
+    color: var(--hx-ink-faint);
+    margin-top: 0.3rem;
+  }
+
+  .stat-value {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+
+  /* ── chips ── */
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.16rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--hx-edge);
+    background: var(--hx-abyss);
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.05em;
+    color: var(--hx-ink-dim);
+    white-space: nowrap;
+  }
+
+  .chip-threat {
+    border-color: color-mix(in srgb, var(--hx-arterial) 42%, transparent);
+    color: color-mix(in srgb, var(--hx-arterial) 72%, var(--hx-ink));
+    background: color-mix(in srgb, var(--hx-arterial) 9%, transparent);
+  }
+  .chip-warn {
+    border-color: color-mix(in srgb, var(--hx-ember) 40%, transparent);
+    color: color-mix(in srgb, var(--hx-ember) 68%, var(--hx-ink));
+    background: color-mix(in srgb, var(--hx-ember) 8%, transparent);
+  }
+  .chip-amber {
+    border-color: color-mix(in srgb, var(--hx-amber) 36%, transparent);
+    color: color-mix(in srgb, var(--hx-amber) 64%, var(--hx-ink));
+    background: color-mix(in srgb, var(--hx-amber) 7%, transparent);
+  }
+  .chip-safe {
+    border-color: color-mix(in srgb, var(--hx-mint) 34%, transparent);
+    color: color-mix(in srgb, var(--hx-mint) 62%, var(--hx-ink));
+    background: color-mix(in srgb, var(--hx-mint) 7%, transparent);
+  }
+
+  /* ── buttons ── */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--hx-edge-strong);
+    background: var(--hx-elevated);
+    color: var(--hx-ink);
+    font-size: 0.84rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      transform 120ms var(--ease-out-expo),
+      border-color 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+  .btn:hover:not(:disabled) {
+    border-color: var(--hx-arterial);
+    color: color-mix(in srgb, var(--hx-arterial) 70%, var(--hx-ink));
+    transform: translateY(-1px);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0) scale(0.985);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Primary = chrome, so red always means data. */
+  .btn-primary {
+    background: var(--hx-bone);
+    border-color: var(--hx-bone);
+    color: var(--hx-on-bone);
+    font-weight: 600;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--hx-bone) 88%, var(--hx-ink));
+    border-color: var(--hx-bone);
+    color: var(--hx-on-bone);
+  }
+
+  .btn-signal {
+    background: linear-gradient(180deg, var(--hx-arterial) 0%, var(--hx-arterial-deep) 100%);
+    border-color: var(--hx-arterial);
+    color: #fff;
+    font-weight: 600;
+  }
+  .btn-signal:hover:not(:disabled) {
+    color: #fff;
+    border-color: color-mix(in srgb, var(--hx-arterial) 70%, #fff);
+    box-shadow: 0 10px 26px -14px color-mix(in srgb, var(--hx-arterial) 85%, transparent);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--hx-edge);
+    color: var(--hx-ink-dim);
+  }
+
+  /* ── micro type ── */
+
+  .label-micro {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--hx-ink-faint);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .display {
+    font-family: var(--font-display);
+    letter-spacing: -0.022em;
+  }
+
+  /* ── tables ── */
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--hx-panel-2);
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--hx-ink-faint);
+    text-align: left;
+    padding: 0.6rem 0.9rem;
+    border-bottom: 1px solid var(--hx-edge);
+    white-space: nowrap;
+  }
+  .data-table tbody td {
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--hx-row-line);
+    vertical-align: middle;
+  }
+  .data-table tbody tr {
+    transition: background-color 110ms ease;
+  }
+  .data-table tbody tr:hover {
+    background: var(--hx-hover);
+  }
+
+  /* ── trace tree ── */
+
+  .trace-node {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem;
+    align-items: baseline;
+    padding: 0.28rem 0.5rem;
+    border-radius: 6px;
+    transition: background-color 110ms ease;
+  }
+  .trace-node:hover {
+    background: var(--hx-hover-2);
+  }
+
+  /* ── storage diff ── */
+
+  .diff-before {
+    color: var(--hx-ink-faint);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+  }
+  .diff-after {
+    color: var(--hx-arterial);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+  }
+
+  .rule {
+    height: 1px;
+    background: var(--hx-edge);
+    border: 0;
+  }
+
+  .scroll-y {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+}
+
+/* ═══════════════════════ motion ═══════════════════════ */
+
+/* The one authored moment: a single arterial sweep, then stillness. */
+@keyframes boot-sweep {
+  0% {
+    transform: translateY(-12%);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(112vh);
+    opacity: 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes roll-up {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes draw-in {
+  from {
+    stroke-dashoffset: var(--dash, 1200);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--hx-mint) 50%, transparent);
+  }
+  50% {
+    opacity: 0.65;
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--hx-mint) 0%, transparent);
+  }
+}
+
+@keyframes threat-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.boot-sweep {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--hx-arterial) 15%, transparent) 18%,
+    var(--hx-arterial) 50%,
+    color-mix(in srgb, var(--hx-arterial) 15%, transparent) 82%,
+    transparent 100%
+  );
+  box-shadow: 0 0 22px 2px color-mix(in srgb, var(--hx-arterial) 40%, transparent);
+  animation: boot-sweep 900ms var(--ease-out-expo) 1 forwards;
+  pointer-events: none;
+  z-index: 60;
+}
+
+.rise-in {
+  animation: rise-in 520ms var(--ease-out-expo) both;
+}
+
+.roll-up {
+  animation: roll-up 460ms var(--ease-out-expo) both;
+}
+
+.grow-x {
+  transform-origin: left center;
+  animation: grow-x 620ms var(--ease-out-expo) both;
+}
+
+.live-dot {
+  animation: live-pulse 2.1s ease-in-out infinite;
+}
+
+.threat-dot {
+  animation: threat-pulse 1.6s ease-in-out infinite;
+}
+
+.spin-slow {
+  animation: spin-slow 1.6s linear infinite;
+}
+
+/* Expand without animating a measured height: grid rows keep it smooth. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms var(--ease-out-expo);
+}
+.collapse > * {
+  overflow: hidden;
+}
+.collapse[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .boot-sweep {
+    display: none;
+  }
+}

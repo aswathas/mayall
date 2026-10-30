@@ -1,0 +1,134 @@
+{
+  "updatedAt": "2026-10-30T21:25:45.605Z",
+  "count": 14,
+  "cmdc": 13,
+  "agy": 1,
+  "agents": [
+    {
+      "name": "attacklab",
+      "label": "Custom Attack Lab (live Foundry run)",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 30236,
+      "started": "2026-10-30T20:58:18.735Z",
+      "summary": "BRIEF — CUSTOM ATTACK LAB (real Foundry, live, configurable)"
+    },
+    {
+      "name": "bible",
+      "label": "Forensic Bible section",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 47748,
+      "started": "2026-10-30T20:48:46.365Z",
+      "summary": "READ FIRST"
+    },
+    {
+      "name": "binance",
+      "label": "Live case: Binance $6.3B breach",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 39408,
+      "started": "2026-10-30T21:10:47.210Z",
+      "summary": "BRIEF — LIVE CASE: THE BINANCE $6.3B BREACH + MAYALL'S ANALYSIS"
+    },
+    {
+      "name": "cli-custom",
+      "label": "cli-custom",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 40300,
+      "started": "2026-10-30T21:22:55.365Z",
+      "summary": "BRIEF — CLI: CUSTOM ATTACK LIVE RUN, END-TO-END, PAIRED WITH MINIMAX CODE (mcode)"
+    },
+    {
+      "name": "deploy",
+      "label": "deploy",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 23336,
+      "started": "2026-10-30T21:17:37.114Z",
+      "summary": "BRIEF — PUBLISH MAYALL TO GITHUB + GITHUB PAGES (public judge-facing site)"
+    },
+    {
+      "name": "evidence",
+      "label": "Evidence workbench + trace explainer",
+      "kind": "agy",
+      "model": "gemini-4-argon-high",
+      "pid": 50328,
+      "started": "2026-10-30T21:09:38.132Z",
+      "summary": "BRIEF — EVIDENCE WORKBENCH + \"HOW WE TRACE\" + DOCS"
+    },
+    {
+      "name": "historical",
+      "label": "Historical analysis + AI reports",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 39360,
+      "started": "2026-10-30T20:58:19.415Z",
+      "summary": "BRIEF — HISTORICAL ANALYSIS + AI FORENSIC REPORTS (with diagrams)"
+    },
+    {
+      "name": "intro",
+      "label": "Remotion intro + live tracker page",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 52540,
+      "started": "2026-10-30T21:04:17.544Z",
+      "summary": "BRIEF — REMOTION INTRO PAGE + LIVE ATTACK TRACKER PAGE"
+    },
+    {
+      "name": "lab",
+      "label": "Lab, case file, report, docs, app shell",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 38328,
+      "started": "2026-10-30T20:29:52.614Z",
+      "summary": "READ FIRST — this is the contract, it wins over any habit"
+    },
+    {
+      "name": "motion",
+      "label": "Motion + evidence components",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 33636,
+      "started": "2026-10-30T20:29:51.750Z",
+      "summary": "READ FIRST — this is the contract, it wins over any habit"
+    },
+    {
+      "name": "motion-reel",
+      "label": "Forensic reel (MP4, motion-graphics)",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 32488,
+      "started": "2026-10-30T21:01:56.919Z",
+      "summary": "BRIEF — MAYALL FORENSIC REEL (motion graphics as code → real MP4)"
+    },
+    {
+      "name": "overview",
+      "label": "Overview dashboard + incident registry",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 40648,
+      "started": "2026-10-30T20:29:52.163Z",
+      "summary": "READ FIRST — this is the contract, it wins over any habit"
+    },
+    {
+      "name": "qa",
+      "label": "QA + accessibility harness",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 32932,
+      "started": "2026-10-30T20:37:40.464Z",
+      "summary": "HARD FILE OWNERSHIP — you own EXACTLY these, create them"
+    },
+    {
+      "name": "showcase",
+      "label": "Judge showcase site",
+      "kind": "cmdc",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "pid": 48964,
+      "started": "2026-10-30T20:48:47.185Z",
+      "summary": "READ FIRST"
+    }
+  ]
+}

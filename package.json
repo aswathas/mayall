@@ -1,0 +1,28 @@
+{
+  "name": "helix-forensics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HELIX — Web3 Exploit Forensics Console. Foundry-powered exploit simulation, on-chain forensic analysis and court-ready forensic bundles.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @helix/web",
+    "build": "npm run build --workspace @helix/web",
+    "build:static": "node scripts/build-static.mjs",
+    "start": "npm run start --workspace @helix/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "mayall": "tsx packages/cli/src/index.ts",
+    "forge:test": "cd contracts && forge test -vv",
+    "forge:build": "cd contracts && forge build",
+    "setup:foundry": "powershell -ExecutionPolicy Bypass -File scripts/setup-foundry.ps1"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

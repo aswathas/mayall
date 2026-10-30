@@ -1,0 +1,216 @@
+You are building the MAYALL CLI — a single-command forensic pipeline for "Mayall — Web3 Exploit Forensics Console" at C:\Users\aswat\Projects\w3-forensics.
+
+The goal: one command runs a real exploit simulation in a real EVM (Foundry), analyses the result, and writes a COMPLETE forensic folder that a client (an incident responder at a protocol) can act on: the raw evidence, the derived signals, the heuristic findings, a written report, an executive summary authored by an LLM, and an immediate remediation plan that says exactly where the flaw was.
+
+# HARD FILE OWNERSHIP — you own EXACTLY these, create them
+packages/cli/package.json
+packages/cli/tsconfig.json
+packages/cli/src/index.ts
+packages/cli/src/run.ts
+packages/cli/src/folder.ts
+packages/cli/src/narrative.ts
+packages/cli/src/plan.ts
+packages/cli/src/session.ts              (if the segmentation lives here instead of the engine)
+packages/cli/README.md
+packages/forensic-engine/src/session.ts  (transaction segmentation + per-transaction detection)
+packages/forensic-engine/src/plan.ts     (the client plan generator)
+contracts/src/SessionVault.sol
+contracts/src/SessionNoise.sol
+contracts/test/LongSession.t.sol
+scripts/mayall.mjs                      (thin wrapper: `node scripts/mayall.mjs <args>`)
+Do NOT modify: packages/web/**, packages/core/**, any other file in
+packages/forensic-engine/** (except the two new files above and the exports in
+packages/forensic-engine/src/index.ts), contracts/** (except your three new
+files), docs/**, scripts/qa/**, scripts/prompt-*.txt, README.md.
+Other agents are editing packages/web right now — stay out of it.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics
+Foundry binaries: C:\Users\aswat\Projects\w3-forensics\.tools\foundry\forge.exe
+Use `npx tsx` to run TypeScript scripts (already installed).
+
+# WHAT ALREADY EXISTS — read these, do not rebuild them
+- packages/forensic-engine/src/simulator.ts   runSimulation(), runAllSimulations(),
+                                                artifactsDir(), contractsDir(), extractTraceText()
+- packages/forensic-engine/src/trace-parser.ts parseForgeTrace() -> { root, flame, nodes, rawLines }
+- packages/forensic-engine/src/detectors.ts    runDetectors(ctx) -> PatternDetection[]
+                                                ctx = { artifact, nodes, rawLines, traceText }
+- packages/forensic-engine/src/report.ts       buildReport(), reportToMarkdown(), saveNarrative(), loadNarrative()
+- packages/forensic-engine/src/bundle.ts       buildForensicBundle(report, sim) -> { filename, buffer }
+- packages/forensic-engine/src/foundry.ts      runTool(), foundryTool(), repoRoot()
+- packages/forensic-engine/src/scenarios.ts    SCENARIOS (6 scenarios)
+- packages/core/src/index.ts                   domain types
+The engine reads the structured artifact a Foundry PoC writes to
+$HELIX_ARTIFACT_DIR/<scenario>.json — see contracts/test/ExploitBase.t.sol for the
+schema and contracts/test/ReentrancyExploit.t.sol for a complete working example.
+
+# WHAT TO BUILD
+
+## 1. contracts/test/LongSession.t.sol — THE 200-TRANSACTION HAYSTACK
+A Foundry test that performs ~200 transactions inside ONE test run, with a real
+attack hidden among benign ones.
+
+- `src/SessionVault.sol`: a benign multi-user vault (deposit / withdraw / a
+  simple share accounting) — normal traffic.
+- `src/SessionNoise.sol`: a benign counter/escrow used for filler transactions.
+- `src/SessionVault.sol` must ALSO contain the vulnerable withdrawal path (the
+  same checks-effects-interactions flaw as ReentrancyVault) so the attack can
+  be committed inside the session.
+- The test:
+  - runs N (default 200) top-level transactions from the test contract:
+    deposits, withdrawals, noise calls, transfers — mostly benign;
+  - at a configurable index (default 137) it executes the real re-entrancy
+    attack against the session vault;
+  - records the index of the attack transaction in the artifact;
+  - writes a structured artifact to $HELIX_ARTIFACT_DIR/long-session.json with
+    the SAME schema as the other PoCs (scenario: "long-session", attackVector:
+    "Reentrancy", chain: "Ethereum", steps, balances, storageWrites, logs) PLUS
+    two extra fields: "txCount" (number of transactions) and "attackTxIndex".
+- The attack must genuinely drain value and the test must assert it.
+
+## 2. packages/forensic-engine/src/session.ts — SEGMENT AND TRIAGE
+The analysis the CLI needs:
+- `segmentTransactions(trace: TraceNode | null): Transaction[]`
+  A Transaction is one TOP-LEVEL call made by the test contract, with its
+  subtree, its gas, its value and its index.
+  The root trace node is the test function; its children are the top-level
+  transactions (plus harness noise — VM:: cheatcode calls are NOT transactions;
+  filter them out).
+- `analyseSession(trace, artifact): SessionAnalysis`
+  For EACH transaction: run the existing detectors over that transaction's
+  subtree (reuse runDetectors with a per-transaction context) and score it.
+  A transaction is SUSPICIOUS when it (a) produced pattern findings above the
+  confidence floor, or (b) shows a repeated (contract, function) pair nested
+  within itself, or (c) moved value out of a victim contract.
+- Return: { transactions: Transaction[], suspicious: { index, reasons, confidence }[], cleanCount }
+- The point of the feature: with 200 transactions and one attack, the analysis
+  must isolate the attack. Assert this in the CLI's own run output and in a
+  self-check.
+
+## 3. packages/forensic-engine/src/plan.ts — THE CLIENT PLAN
+`buildClientPlan(analysis, report): ClientPlan` producing the artefact a
+client actually acts on. It must be plain language, not JSON jargon:
+- **Where the flaw was** — the exact contract and function, the file if known
+  from the trace, the line of behaviour that is wrong ("the state update happens
+  after the external call in withdraw()").
+- **Why it was exploitable** — the precondition that made the attack possible.
+- **What it cost** — the loss figure, in the asset and in USD where known.
+- **What to do Monday morning** — a short, ordered, concrete list: the
+  immediate containment step, the one-line code fix, the verification test to
+  write, and what to check in the logs for historical exposure.
+- **What is still unknown** — the honest gaps (e.g. this is a local
+  reproduction; it does not prove the live deployment was exploited).
+Render it as Markdown.
+
+## 4. packages/cli/src/* — THE COMMAND
+```
+mayall run [options]
+  --scenario <id>   one scenario, or "all" (default: all)
+  --out <dir>       output folder (default: artifacts/runs/<utc-timestamp>-<scenario>)
+  --tx <n>          transactions in the long session (default 200)
+  --narrative       ask an LLM to author the executive summary (see below)
+  --no-bundle       skip the zip
+mayall analyze <folder>      re-analyse an existing run folder
+mayall bundle <folder>       (re)build the forensic bundle from a run folder
+mayall list                  the scenarios and what each one proves
+```
+`node scripts/mayall.mjs <args>` must work from the repo root.
+Also add the package to the root package.json workspaces ("packages/*" already
+covers it) and add a root script `"mayall": "tsx packages/cli/src/index.ts"`.
+
+### The output folder — this is the deliverable
+```
+artifacts/runs/<stamp>-<scenario>/
+├── MANIFEST.md              what this folder is, exactly how it was produced,
+│                            the commands to reproduce it, and a file index
+├── report/report.md         the written forensic report
+├── report/report.json       machine-readable report
+├── report/report.html       a print-ready, self-contained HTML report
+├── raw/forge-stdout.txt     the exact forge output
+├── raw/forge-stderr.txt
+├── raw/trace.txt            the raw call tree as text
+├── raw/trace.json           the parsed call tree (nodes, gas, depth)
+├── raw/artifact.json        the structured artifact the PoC wrote
+├── raw/environment.json     forge version, solc version, node version, os, cwd
+├── derived/storage-diff.csv
+├── derived/balance-timeline.csv
+├── derived/transaction-timeline.csv   one row per transaction in the session
+├── derived/gas-flame.json
+├── derived/signals.json      the DERIVED signals the heuristics read (repeated
+│                              calls, value out, slot mutations, oracle reads…)
+├── derived/patterns.json     the heuristic findings
+├── narrative/executive-summary.md   written by an LLM (see below)
+├── plan/client-plan.md      where the flaw was + what to do Monday morning
+├── plan/remediation.md      the code-level remediation, per attack vector
+└── bundle/<case>-forensic-bundle.zip
+```
+Every derived CSV/JSON must be derivable from the raw files — do not invent
+data. The raw/ files are the evidence; derived/ is what the analysis concluded.
+
+### The long session run
+`mayall run --scenario long-session` must:
+- run the 200-transaction Foundry test,
+- segment the trace into 200 transactions,
+- isolate the malicious one,
+- write the transaction timeline CSV and the client plan that names the
+  transaction index and the flaw,
+- print a clear summary: "200 transactions analysed, 1 suspicious (index 137,
+  Reentrancy, 97% confidence)".
+
+## 5. packages/cli/src/narrative.ts — PAIR IT WITH MINIMAX CODE
+The CLI must be able to have an LLM author the executive summary from the
+evidence, and store it where the report builder picks it up (the engine's
+saveNarrative()/loadNarrative() use data/narratives/<caseId>.md).
+
+Try these in order, and report which one was used:
+1. **Command Code (`cmdc`)** — the preferred path on this machine. It is
+   installed at C:\Users\aswat\AppData\Roaming\npm\node_modules\command-code\dist\index.mjs
+   and the model is deepseek/deepseek-v4.1-flash.
+   IMPORTANT (this bit us before): do NOT pass a multi-line prompt as an
+   argument — the CLI splits it and fails with "too many arguments".
+   Instead: write the full prompt (the evidence, the findings, the writing
+   brief) to a temp .md file, then invoke
+   `node <entry> -p "@<tempfile>" --model deepseek/deepseek-v4.1-flash --yolo --tools-all --no-session --skip-onboarding --max-turns 20`
+   and capture stdout. The file path must be passed as a SINGLE-LINE argument.
+   The prompt must instruct the model to write the executive summary ONLY —
+   no preamble, no "here is", no markdown fences around the whole thing.
+2. **Ollama** — `ollama run qwen2.5:3b "<prompt>"` (qwen2.5:3b is installed).
+3. **Fallback** — the engine's deterministic summary, with a line in
+   MANIFEST.md saying no LLM was available.
+
+Then: save the text to data/narratives/<caseId>.md via the engine's
+saveNarrative(), AND copy it into the run folder's narrative/ directory, then
+regenerate the report so it contains the narrative.
+
+## 6. report.html — a print-ready report
+Add a self-contained HTML report (no external CSS/JS, inline styles, a
+print stylesheet) in the engine (a new file is fine, e.g.
+packages/forensic-engine/src/report-html.ts). It must render the same content
+as report.md, look like the "Red Room" design language (ground #090607, panels
+#110b0d, hairline #2b1a1e, ink #f7eded, ink-dim #c3a7aa, arterial #ff3b30,
+ember #ff7a45, amber #f5b942, mint #46d39a, bone #efe6e4; mono for data), and
+print cleanly to PDF on A4.
+
+# VERIFY BEFORE YOU FINISH (mandatory, report the real output)
+1. `cd contracts` then `forge build` — clean.
+2. `forge test` — the whole suite must pass, including LongSession.
+3. From the repo root:
+   `npx tsx packages/cli/src/index.ts run --scenario reentrancy --out artifacts/runs/demo-reentrancy`
+   → the folder must be complete (every file listed above) and the console
+   output must summarise the findings.
+4. `npx tsx packages/cli/src/index.ts run --scenario long-session --tx 200 --out artifacts/runs/demo-session`
+   → must report 200 transactions analysed and exactly the malicious one
+   isolated. Print the transaction index and the reasons.
+5. `npx tsx packages/cli/src/index.ts run --scenario reentrancy --narrative --out artifacts/runs/demo-narrative`
+   → must report WHICH LLM authored the summary, and narrative/executive-summary.md
+   must exist with real content.
+6. Open the generated report.html and screenshot it (copy it into
+   packages/web/public/ temporarily and use
+   `npx tsx scripts/shoot.ts report-html /<name>.html 1280 900`, then remove the copy).
+7. Confirm the bundle zip contains the new artefacts.
+
+# DELIVERABLE (final message, max 35 lines, facts only)
+- Files created with line counts.
+- The real output of each verification command (especially the 200-transaction
+  isolation result and which LLM wrote the narrative).
+- The final folder tree of the long-session run.
+- Any deviation from this brief, with the reason.

@@ -1,0 +1,97 @@
+You are building the API LAYER of "HELIX — Web3 Exploit Forensics Console", a Next.js 15 (App Router, React 19) forensic dashboard for Web3 exploit incidents.
+
+# HARD FILE OWNERSHIP — do not write outside this list
+You own EXACTLY: packages/web/app/api/**
+Do NOT create/modify anything else — not app/page.tsx, not components/, not lib/, not globals.css, not package.json, not tsconfig.json, not packages/core/**, not packages/forensic-engine/**, not contracts/**, not README.md, not docs/**.
+Another agent owns the UI. They are coding against your contract, so the response shapes below are FIXED.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics\packages\web
+Run `cd C:\Users\aswat\Projects\w3-forensics\packages\web` before commands.
+
+# CONTEXT
+The forensic engine already exists and is complete. READ THESE FILES FIRST:
+- packages/core/src/index.ts            (domain types: Incident, SimulationResult, ForensicReport, PatternDetection, TraceNode, Severity, Chain, ATTACK_VECTORS, SEVERITY_COLORS, CHAIN_COLORS)
+- packages/core/src/incidents.ts         (INCIDENTS array, INCIDENT_BY_SLUG map)
+- packages/forensic-engine/src/index.ts (public API)
+- packages/forensic-engine/src/scenarios.ts      (SCENARIOS, SCENARIO_BY_ID, ScenarioSpec)
+- packages/forensic-engine/src/simulator.ts      (runSimulation, runAllSimulations, contractsDir, artifactsDir)
+- packages/forensic-engine/src/report.ts         (buildReport, reportToMarkdown, saveNarrative, loadNarrative)
+- packages/forensic-engine/src/bundle.ts         (buildForensicBundle -> { filename, buffer })
+- packages/forensic-engine/src/foundry.ts        (foundryAvailable, foundryTool, repoRoot)
+
+Everything you need is already written. Do not reimplement the engine. Do not modify it.
+
+# ROUTES TO IMPLEMENT (Next.js App Router route handlers)
+
+1. `app/api/status/route.ts` — GET
+   -> { foundry: boolean, scenarios: number, artifacts: number, version: string }
+   foundry = foundryAvailable() from the engine; scenarios = SCENARIOS.length; artifacts = count of *.json files in artifactsDir(); version = '0.1.0'.
+
+2. `app/api/overview/route.ts` — GET
+   -> {
+        totals: { incidents, lossUsd, reproducible, chains, vectors },
+        byVector:  { id: AttackVectorId, label, count, lossUsd }[],
+        byChain:   { chain: Chain, count, lossUsd }[],
+        timeline:  { month: 'YYYY-MM', lossUsd, count }[],
+        severity:  { severity: Severity, count }[],
+        topIncidents: Incident[]   // top 6 by lossUsd desc
+     }
+   Compute from INCIDENTS. `byVector` counts an incident once per distinct vector it carries, and sums its lossUsd into each vector's total. `timeline` is grouped by incident date month, sorted ascending. `severity` maps each incident to a severity derived from lossUsd (>=100M -> critical, >=10M -> high, >=1M -> medium, else low) — document that rule in a comment. `chains` = distinct chain count, `vectors` = distinct vector count, `reproducible` = count of incident.reproduitable.
+
+3. `app/api/incidents/route.ts` — GET -> Incident[] (newest first by date desc).
+
+4. `app/api/incidents/[slug]/route.ts` — GET -> { incident: Incident | null }. In Next 15 the route handler context params is a Promise: `export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> })` — await it. Return 404 with `{ incident: null }` when not found.
+
+5. `app/api/scenarios/route.ts` — GET -> ScenarioSpec[]
+
+6. `app/api/simulate/route.ts` — POST
+   body: { scenarioId: string }
+   -> SimulationResult (the full object from runSimulation)
+   Set `export const maxDuration = 300;` and `export const dynamic = 'force-dynamic';`.
+   Validate the scenarioId against SCENARIO_BY_ID; if unknown, return 400 with { error: 'Unknown scenario' }.
+
+7. `app/api/simulate/all/route.ts` — POST -> { results: SimulationResult[], totalMs: number } using runAllSimulations(). maxDuration = 600, dynamic force-dynamic.
+
+8. `app/api/report/[caseId]/route.ts` — GET
+   Query param `scenario` (optional). Resolve the incident via INCIDENT_BY_SLUG.get(caseId). If a `scenario` query param is given, run a simulation for it (reuse the artifact on disk if the scenario has not changed — you may simply call runSimulation, it is fast enough; but to avoid re-running forge on every page load, first check whether artifacts/<scenario>.json exists and reuse it by constructing the SimulationResult from the artifact — implement a small helper `resultFromArtifact(scenarioId, artifact)` OR just call runSimulation and accept the cost. Prefer: try to reuse; if you cannot reuse cleanly, call runSimulation.)
+   -> ForensicReport built with buildReport(caseId, sim, incident ?? null)
+   caseId semantics: for an incident use the incident slug; for a lab scenario use `lab-<scenarioId>` (incident lookup returns null, which is fine — buildReport handles a null incident).
+
+9. `app/api/report/[caseId]/narrative/route.ts` — POST
+   body: { text: string } -> { ok: true, path: string }
+   Calls saveNarrative(caseId, text) from the engine. This is how MiniMax Code injects a hand-authored executive summary into the generated report. Validate that text is a non-empty string; 400 otherwise.
+
+10. `app/api/bundle/[caseId]/route.ts` — GET
+    Query param `scenario` (optional, same resolution as the report route).
+    Build the ForensicReport, then call buildForensicBundle(report, sim) -> { filename, buffer }.
+    Respond with the zip: headers { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${filename}"`, 'Content-Length': String(buffer.length) } and body = buffer (a Node Buffer is acceptable as a Response body).
+
+11. `app/api/report/[caseId]/markdown/route.ts` — GET (nice-to-have, low cost)
+    -> text/markdown of reportToMarkdown(report) with Content-Disposition attachment.
+
+# ENGINEERING RULES
+- Use `export const dynamic = 'force-dynamic';` on every route that runs forge or reads disk.
+- Import from '@helix/core' and '@helix/forensic-engine' (both are npm workspaces packages, already symlinked; tsconfig paths are configured).
+- Node APIs (node:fs, node:path) are fine in route handlers. Do NOT set `export const runtime = 'edge'` — these need the Node runtime.
+- Every route must handle its failure modes and return a JSON error body with a non-2xx status, never an unhandled throw.
+- No `any` in exported function signatures. Keep handlers small; put shared logic in `app/api/_lib.ts` (a non-route file inside app/api is fine — prefix with underscore so Next does not treat it as a route).
+
+# VERIFY BEFORE YOU FINISH
+1. `npx tsc --noEmit` in packages/web — ZERO errors from your files. (The UI agent may still have errors in their files; ignore theirs but report the count.)
+2. Start the dev server: `npm run dev` in packages/web in the background, wait ~20s, then curl each route and show the HTTP status + a truncated body:
+   - curl -s -o NUL -w "%{http_code}" http://localhost:3000/api/status
+   - curl -s http://localhost:3000/api/overview
+   - curl -s http://localhost:3000/api/incidents
+   - curl -s http://localhost:3000/api/scenarios
+   - curl -s -X POST http://localhost:3000/api/simulate -H "Content-Type: application/json" -d "{\"scenarioId\":\"reentrancy\"}"
+   - curl -s "http://localhost:3000/api/report/lab-reentrancy?scenario=reentrancy"
+   - curl -s -o bundle.zip -w "%{http_code} %{size_download}" "http://localhost:3000/api/bundle/lab-reentrancy?scenario=reentrancy"
+   Then stop the dev server. NOTE: the contracts/ directory may still be under construction by another agent, so /api/simulate may legitimately fail with "No artifact written" or a forge error at this time — report exactly what came back. Every OTHER route must return 200 with valid JSON.
+
+# DELIVERABLE
+Final message, max 25 lines:
+- The list of route files created.
+- The curl result table: route -> HTTP status -> note (this is the key evidence).
+- The exact output of `npx tsc --noEmit`.
+- Any deviation from this spec, with the reason.
+Facts only.

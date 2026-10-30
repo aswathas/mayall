@@ -1,0 +1,54 @@
+# BRIEF — GRAPHIFY SEMANTIC EXTRACTION (documentation corpus)
+
+You are completing the semantic-extraction phase of a `graphify` knowledge-graph build over the
+Mayall project at `C:\Users\aswat\Projects\w3-forensics`.
+
+The AST pass is DONE (4515 nodes, 7782 edges from code). The doc/paper/image corpus still needs
+semantic extraction: entities and relationships inside the project's markdown documents.
+
+## STEP 1 — Read the extraction spec, IN FULL, and obey it exactly
+`C:\Users\aswat\.claude\skills\graphify\references\extraction-spec.md`
+
+It defines: the JSON schema (`nodes`, `edges`, `hyperedges`), node-ID rules, the confidence rubric
+(`EXTRACTED` / `INFERRED` / `AMBIGUOUS`), frontmatter rules, hyperedge rules, and the required
+`coverage` map. Do not deviate from it.
+
+## STEP 2 — Read the chunk assignment
+`C:\Users\aswat\Projects\w3-forensics\graphify-out\.graphify_chunks.json` is a JSON array of 6
+arrays of absolute file paths.
+
+**Your chunks are the indices listed in the file `C:\Users\aswat\Projects\w3-forensics\scripts\graphify\MY_CHUNKS.txt`**
+(read that file — it contains one or two integers, one per line). For EACH of your assigned chunk
+indices, produce one output chunk file.
+
+## STEP 3 — Read every file in your chunk(s) to its LAST line
+Use the Read tool. If a file is longer than one read, page through it with `offset`/`limit` until
+you have seen the end. The spec requires a `coverage` map recording the number of lines you
+actually read per file — a partly-read file is retried later, so read them completely.
+
+## STEP 4 — Write one chunk file per assigned chunk
+For chunk index N, write:
+`C:\Users\aswat\Projects\w3-forensics\graphify-out\.graphify_chunk_0N.json`
+(e.g. index 0 -> `.graphify_chunk_00.json`, index 4 -> `.graphify_chunk_04.json`).
+
+Valid JSON with at least the keys `nodes`, `edges`, `hyperedges`, `coverage`, plus
+`input_tokens` and `output_tokens` set to 0 (the parent fills in the real counts).
+
+## RULES (these are the graphify honesty rules — they matter)
+- **Never invent an edge.** If you are not certain, mark it `AMBIGUOUS`.
+- Node IDs must follow the spec's rules and be stable and unique.
+- `source_location` must use absolute paths, formatted as the spec requires.
+- The `coverage` map must include EVERY file in your chunk, with a line count equal to the file's
+  real length.
+- Write ONLY the chunk files. Do not modify any other file in the repo. Do not run builds or tests.
+- `rm`/delete is policy-gated on this machine — never delete anything.
+- Other agents are working in this repo right now. Do not touch their files.
+
+## ACCEPTANCE
+- One chunk file per assigned index exists, parses as JSON, and has a non-empty `nodes` array and a
+  non-empty `edges` array.
+- Each chunk file's `coverage` map lists every file in that chunk with the correct line count.
+
+## FINAL RESPONSE (under 120 words)
+Report per chunk: index, files processed, node count, edge count, hyperedge count, and any file you
+could not read in full.

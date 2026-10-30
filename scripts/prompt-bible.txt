@@ -1,0 +1,127 @@
+You are building the FORENSIC BIBLE — the public knowledge surface of "Mayall — Web3 Exploit Forensics Console" at C:\Users\aswat\Projects\w3-forensics. It is the page a judge, a protocol engineer or a student opens to understand how Web3 exploits are actually detected and proven.
+
+# READ FIRST
+- C:\Users\aswat\Projects\w3-forensics\docs\design\RED-ROOM.md  — the design contract (read it fully; it wins over any habit)
+- packages/core/src/index.ts            — ATTACK_VECTORS (16 vectors with signature + severityWeight + category), ATTACK_VECTOR_LIST, Severity, Chain, SEVERITY_COLORS
+- packages/forensic-engine/src/detectors.ts — DETECTOR_CATALOG (10 rules: id, vectorId, label, baseSeverity, looksFor, emits[], limitation) — this is the published rule set
+- packages/forensic-engine/src/scenarios.ts  — SCENARIOS (6 live reproductions: id, title, vectorId, chain, description, lookFor[])
+- packages/web/app/globals.css          — the token system and classes you must use
+- packages/web/components/Panel.tsx, MetricStrip.tsx, SeverityChip.tsx, ChainChip.tsx, VectorChip.tsx — the primitives you must reuse
+- packages/web/lib/format.ts, lib/types.ts — existing helpers, reuse them
+
+# HARD FILE OWNERSHIP — you own EXACTLY these, create them
+packages/web/app/bible/page.tsx
+packages/web/app/bible/[vectorId]/page.tsx
+packages/web/components/BibleIndex.tsx
+packages/web/components/BibleEntry.tsx
+packages/web/components/BibleVectorCard.tsx
+packages/web/components/BibleDetectorList.tsx
+packages/web/data/bible.ts              (the assembled, typed content module)
+packages/web/app/bible/loading.tsx
+Do NOT touch anything else. Other agents are editing app/lab, app/cases,
+app/docs, app/page.tsx, app/incidents, components/* (except the three Bible
+components above), packages/core/**, packages/forensic-engine/**, contracts/**,
+docs/**, scripts/**.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics\packages\web
+The dev server runs on http://localhost:3000 and hot-reloads.
+
+# WHAT TO BUILD
+
+## packages/web/data/bible.ts
+A typed content module that JOINS the real data — do not retype it:
+- `import { ATTACK_VECTORS, ATTACK_VECTOR_LIST } from '@helix/core'`
+- `import { DETECTOR_CATALOG } from '@helix/forensic-engine'`
+- `import { SCENARIOS } from '@helix/forensic-engine'`
+For each of the 16 vectors produce an entry:
+{ id, label, category, signature, severityWeight, detectors: DetectorRule[],
+  scenarios: ScenarioSpec[], live: boolean }
+`live` is true when a local Foundry reproduction exists for that vector.
+Export a `BIBLE_ENTRIES` array and a `getEntry(vectorId)` helper.
+If a vector has no local reproduction, that is information — surface it, do
+not hide it.
+
+## app/bible/page.tsx — THE INDEX
+The Forensic Bible index. It must read like a reference work, not a landing page.
+- A real <h1> ("The Forensic Bible" or similar). No kicker above it.
+- A one-paragraph orientation: what this is, in plain words, and the honest
+  statement that the rules below are the rules the engine actually executes.
+- A compact metric strip: 16 attack vectors, 10 detectors, 6 live
+  reproductions, and the number of vectors that currently have a local proof.
+- The vector list: a dense, scannable index (NOT a grid of identical cards).
+  Use a table-like or definition-list layout: vector name, category, severity
+  weight, which detectors watch for it, and a LIVE badge where a reproduction
+  exists. Each row links to /bible/<vectorId>.
+  Make the layout feel like an index in a serious reference book — dense,
+  aligned, with hairlines, and it must fill the page without dead space.
+- Group the list by category (Value Extraction, Access & Control,
+  Oracle & Market, Logic & Math, Infrastructure) with the category as a
+  section heading. The grouping carries information, so it earns its headings.
+- A short "how to read this" block explaining the three things a vector entry
+  gives you: the pattern, the trace signature, and the fix.
+
+## app/bible/[vectorId]/page.tsx — THE ENTRY
+A deep entry for one attack vector. This is the page that has to teach.
+- Header: vector name (h1), category, severity weight, and a LIVE badge plus
+  a "Reproduce locally" button when a scenario exists (linking to
+  /lab?scenario=<scenario.id>).
+- **What the pattern is** — the vector's `signature` plus a short, precise
+  explanation of the mechanism in plain language. Two or three sentences that
+  a protocol engineer would find accurate, not marketing copy.
+- **The trace signature** — what you see in a call tree when this attack fires.
+  Be concrete: which function repeats, which storage slot moves, which balance
+  moves. Where a live scenario exists, use its `lookFor` checklist as the
+  signature.
+- **The detectors** — every detector in DETECTOR_CATALOG that watches for this
+  vector: its label, its base severity, exactly what it looks for (`looksFor`),
+  the evidence it emits (`emits`), and its honest limitation. Present the
+  limitation clearly, not hidden in a tooltip.
+- **The fix** — the remediation for this vector, in code terms. Write it from
+  the mechanism: what to reorder, what to guard, what to bind. Concrete enough
+  to act on.
+- **Evidence from our lab** — when a live reproduction exists, show the real
+  measured figures from the local run (the loss in ETH and the confidence the
+  detector reached). These are real numbers from our lab; they must be
+  accurate. The numbers live in the artifacts on disk
+  (C:\Users\aswat\Projects\w3-forensics\artifacts\<scenario>.json) — read them
+  at build time in the server component if you want them exact, or state them
+  with the scenario's description. Do NOT invent figures that contradict the
+  artifacts: reentrancy 6 ETH, oracle-manipulation 40 ETH, access-control
+  50 ETH, flash-loan 250 ETH, delegatecall 50 ETH, selfdestruct 60 ETH.
+- An "all vectors" link back to the index.
+- Not-found handling for an unknown vectorId: a real empty state.
+
+## app/bible/loading.tsx
+A skeleton matching the index layout (not a spinner).
+
+## components/Bible*.tsx
+Three focused components, one concern each, following the contract's component
+rules (small, typed, no raw hex, tokens only).
+
+# HARD RULES
+- CSS variables from globals.css by name. NEVER a raw hex.
+- Never nest a Panel inside a Panel.
+- No emoji or unicode glyphs as icons — lucide-react SVG only.
+- No component may branch on the theme (dark "red room" / light "paper room" both
+  come free from the tokens).
+- The page must work in BOTH themes and at 390px width.
+- Every interactive element is a real <button>/<a>, keyboard reachable.
+- Content accuracy beats volume: every sentence must be true of the code.
+
+# VERIFY BEFORE YOU FINISH
+1. `npx tsc --noEmit` in packages/web — ZERO errors from your files.
+2. Screenshot and LOOK:
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts bible /bible 1600 1100 dark`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts bible-light /bible 1600 1100 light`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts bible-entry /bible/reentrancy 1600 1100 dark`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts bible-mobile /bible 390 900 dark`
+   Fix what the screenshots show: dead space, clipped text, misalignment,
+   overflow, console errors. Iterate until it is right.
+3. Confirm the numbers you printed match the artifact files.
+
+# DELIVERABLE (final message, max 30 lines, facts only)
+- Files created with line counts.
+- `npx tsc --noEmit` result.
+- The screenshots you took and what they revealed.
+- Which of the 16 vectors have a live local reproduction (the list).
+- Any deviation from this brief, with the reason.

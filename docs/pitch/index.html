@@ -1,0 +1,2080 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mayall — Web3 Exploit Forensics Console</title>
+<style>
+  /* ─────────────────────────────────────────────────────────────────────
+     MAYALL — HACKATHON PITCH DECK
+     Red Room design language. 1280 × 720 stage, scaled to fit.
+     Self-contained: no CDN, no webfonts, no network.
+     ───────────────────────────────────────────────────────────────────── */
+
+  :root {
+    --ground: #090607;
+    --panel: #110b0d;
+    --panel-2: #170f12;
+    --hairline: #2b1a1e;
+    --hairline-strong: #3d2429;
+    --ink: #f7eded;
+    --ink-dim: #c3a7aa;
+    --ink-faint: #8f7276;
+    --arterial: #ff3b30;
+    --arterial-deep: #b31f18;
+    --ember: #ff7a45;
+    --amber: #f5b942;
+    --mint: #46d39a;
+    --bone: #efe6e4;
+
+    --font-display: "Helvetica Neue", Helvetica, Arial, "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--ground);
+    color: var(--ink);
+    overflow: hidden;
+  }
+
+  body {
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-variant-numeric: tabular-nums;
+  }
+
+  button { font: inherit; color: inherit; }
+
+  /* ── viewport and fixed 1280 × 720 stage ───────────────────────────── */
+
+  #viewport {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 26px;
+  }
+
+  #stage {
+    position: relative;
+    width: 1280px;
+    height: 720px;
+    flex: none;
+    transform-origin: center center;
+  }
+
+  /* ── the slide itself ──────────────────────────────────────────────── */
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 88px 64px 56px;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    background:
+      radial-gradient(900px 520px at 88% -14%, rgba(255, 59, 48, 0.105) 0%, transparent 62%),
+      radial-gradient(760px 520px at 2% 112%, rgba(255, 122, 69, 0.045) 0%, transparent 58%),
+      linear-gradient(180deg, #0b0708 0%, var(--ground) 46%, #070506 100%);
+    transition: opacity 160ms ease;
+  }
+
+  .slide.is-active {
+    opacity: 1;
+    visibility: visible;
+    z-index: 2;
+  }
+
+  /* the evidence grid: a measuring surface, never a decoration */
+  .slide::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      linear-gradient(to right, rgba(255, 237, 237, 0.022) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 237, 237, 0.022) 1px, transparent 1px);
+    background-size: 64px 64px;
+    -webkit-mask-image: radial-gradient(980px 680px at 30% 0%, #000 0%, transparent 78%);
+    mask-image: radial-gradient(980px 680px at 30% 0%, #000 0%, transparent 78%);
+  }
+
+  /* the one authored moment: a subtle arterial wipe on every transition */
+  .slide::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 150px;
+    pointer-events: none;
+    z-index: 20;
+    opacity: 0;
+    transform: translateX(-180px);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 59, 48, 0.06) 34%,
+      rgba(255, 59, 48, 0.30) 84%,
+      var(--arterial) 98%,
+      transparent 100%
+    );
+  }
+
+  .slide.is-active::before {
+    animation: arterial-wipe 720ms var(--ease) 1 both;
+  }
+
+  @keyframes arterial-wipe {
+    0%   { transform: translateX(-180px); opacity: 0; }
+    10%  { opacity: 0.7; }
+    72%  { opacity: 0.45; }
+    100% { transform: translateX(1310px); opacity: 0; }
+  }
+
+  .content {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    opacity: 0;
+    transition: opacity 200ms ease 40ms;
+  }
+
+  .slide.is-active .content { opacity: 1; }
+
+  /* ── shared type ───────────────────────────────────────────────────── */
+
+  .mono { font-family: var(--font-mono); }
+
+  .micro {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    line-height: 1.35;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  h1, h2, h3, h4, p, dl, dd, dt, ul, ol, blockquote {
+    margin: 0;
+  }
+
+  h2 {
+    font-size: 46px;
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .lede {
+    margin-top: 18px;
+    max-width: 660px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+  }
+
+  .hot { color: var(--arterial); }
+  .dim { color: var(--ink-faint); }
+  .ink { color: var(--ink); }
+
+  /* ── fixed HUD and progress rail ───────────────────────────────────── */
+
+  .hud {
+    position: fixed;
+    top: 22px;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 30px;
+    pointer-events: none;
+  }
+
+  .hud-left, .hud-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .hud-left .wordmark { color: var(--ink-dim); letter-spacing: 0.22em; }
+  .hud-sep { width: 18px; height: 1px; background: var(--hairline-strong); display: inline-block; }
+  .hud-counter { color: var(--ink-dim); }
+  .hud-counter b { color: var(--ink); font-weight: 500; }
+  .hud-hint { color: var(--ink-faint); }
+  .hud-mark {
+    width: 13px;
+    height: 13px;
+    display: inline-block;
+    position: relative;
+  }
+  .hud-mark::before, .hud-mark::after {
+    content: "";
+    position: absolute;
+    background: var(--arterial);
+  }
+  .hud-mark::before { left: 0; top: 0; width: 1px; height: 13px; }
+  .hud-mark::after { left: 0; top: 0; width: 13px; height: 1px; }
+  .hud-mark i {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 5px;
+    height: 5px;
+    background: var(--arterial);
+    display: block;
+  }
+
+  .rail {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    z-index: 40;
+    background: #140c0e;
+    pointer-events: none;
+  }
+
+  .rail-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 12.5%;
+    background: var(--arterial);
+    transition: width 260ms var(--ease);
+  }
+
+  .rail-ticks {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+  }
+
+  .rail-ticks span { border-right: 1px solid rgba(9, 6, 7, 0.75); }
+  .rail-ticks span:last-child { border-right: 0; }
+
+  /* ── click zones ───────────────────────────────────────────────────── */
+
+  .zone {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: 5.5%;
+    min-width: 44px;
+    z-index: 35;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .zone-prev { left: 0; }
+  .zone-next { right: 0; }
+
+  .zone svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--ink-faint);
+    opacity: 0;
+    transition: opacity 140ms ease, stroke 140ms ease;
+  }
+
+  .zone:hover svg, .zone:focus-visible svg { opacity: 0.75; stroke: var(--bone); }
+  .zone:focus-visible { outline: 2px solid var(--bone); outline-offset: -4px; }
+
+  /* ── slide 1: title ────────────────────────────────────────────────── */
+
+  .s1 { flex-direction: row; gap: 56px; align-items: stretch; }
+
+  .s1-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-bottom: 44px;
+  }
+
+  .hero-name {
+    font-size: 174px;
+    line-height: 0.78;
+    letter-spacing: -0.065em;
+    font-weight: 500;
+    color: var(--ink);
+    margin-left: -9px;
+  }
+
+  .hero-line {
+    margin-top: 34px;
+    font-size: 26px;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    max-width: 640px;
+  }
+
+  .hero-claim {
+    margin-top: 22px;
+    max-width: 600px;
+    font-size: 15px;
+    line-height: 1.58;
+    color: var(--ink-dim);
+  }
+
+  .hero-claim strong { color: var(--ink); font-weight: 500; }
+
+  .s1-plate {
+    flex: 0 0 372px;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--hairline);
+    padding-left: 30px;
+    padding-top: 8px;
+  }
+
+  .plate-label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  .plate-label::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    background: var(--arterial);
+  }
+
+  .plate-tree {
+    margin-top: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .plate-call {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 19px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    margin-left: calc(var(--i) * 17px);
+    position: relative;
+    padding-left: 14px;
+  }
+
+  .plate-call::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 9px;
+    width: 7px;
+    height: 1px;
+    background: var(--hairline-strong);
+  }
+
+  .plate-call.is-first { color: var(--ink); }
+  .plate-call.is-first::before { background: var(--arterial); width: 8px; height: 2px; top: 8px; }
+
+  .plate-call em {
+    font-style: normal;
+    color: var(--arterial);
+    margin-left: 6px;
+    font-size: 9px;
+  }
+
+  .plate-rule {
+    height: 1px;
+    background: var(--hairline);
+    margin: 22px 0 0;
+  }
+
+  .plate-data { margin-top: 8px; }
+
+  .plate-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .plate-row dt {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .plate-row dd {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .plate-row dd.loss { color: var(--arterial); font-size: 15px; }
+
+  .s1-stats {
+    position: absolute;
+    left: 64px;
+    right: 64px;
+    bottom: 28px;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 18px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--hairline);
+    padding-top: 14px;
+  }
+
+  .s1-stats b { color: var(--ink-dim); font-weight: 500; }
+  .s1-stats .stat-sep { width: 3px; height: 3px; background: var(--hairline-strong); display: inline-block; }
+
+  /* ── slide 2: problem ──────────────────────────────────────────────── */
+
+  .s2 {
+    flex-direction: row;
+    gap: 62px;
+    align-items: flex-start;
+    padding-top: 106px;
+  }
+
+  .s2-left { flex: 0 0 460px; }
+
+  .s2-left h2 { font-size: 40px; }
+
+  .s2-left .lede { max-width: 390px; }
+
+  .s2-note {
+    margin-top: 34px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    line-height: 1.6;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--hairline);
+    padding-top: 14px;
+  }
+
+  .s2-note::before {
+    content: "";
+    flex: none;
+    width: 5px;
+    height: 5px;
+    margin-top: 4px;
+    background: var(--arterial);
+  }
+
+  .vector-list {
+    flex: 1;
+    min-width: 0;
+    border-top: 1px solid var(--hairline-strong);
+  }
+
+  .vector-row {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr) 220px;
+    align-items: baseline;
+    gap: 14px;
+    padding: 16px 0 15px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .vector-row .tick {
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--arterial);
+    transform: rotate(45deg);
+    align-self: center;
+    margin-left: 1px;
+  }
+
+  .vector-name {
+    font-size: 26px;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+
+  .vector-desc {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    text-align: right;
+  }
+
+  /* ── slide 3: demo ─────────────────────────────────────────────────── */
+
+  .s3 { flex-direction: row; gap: 54px; align-items: stretch; padding-top: 92px; }
+
+  .s3-left { flex: 0 0 428px; display: flex; flex-direction: column; }
+
+  .s3-left h2 { font-size: 48px; }
+
+  .s3-left .lede { max-width: 400px; }
+
+  .clickpath {
+    margin-top: 30px;
+    list-style: none;
+    padding: 0;
+    border-top: 1px solid var(--hairline-strong);
+  }
+
+  .clickpath li {
+    display: grid;
+    grid-template-columns: 68px minmax(0, 1fr);
+    align-items: baseline;
+    gap: 10px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 13px;
+    color: var(--ink-dim);
+  }
+
+  .clickpath .step-lbl {
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .clickpath code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+  }
+
+  .clickpath b { color: var(--bone); font-weight: 500; }
+
+  .s3-timing {
+    margin-top: auto;
+    padding-top: 18px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--hairline);
+  }
+
+  .s3-timing b { color: var(--mint); font-weight: 500; }
+
+  .s3-right { flex: 1; min-width: 0; display: flex; align-items: center; }
+
+  .browser {
+    width: 100%;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 10px;
+    background: var(--panel);
+    overflow: hidden;
+    box-shadow: 0 28px 60px -46px rgba(0, 0, 0, 0.9);
+  }
+
+  .browser-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 11px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--panel-2);
+  }
+
+  .browser-bar .sq { width: 6px; height: 6px; border: 1px solid var(--hairline-strong); display: block; }
+  .browser-bar .url {
+    margin-left: 10px;
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .browser-bar .live {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.14em;
+    color: var(--mint);
+  }
+
+  .browser-body { padding: 16px 18px 14px; }
+
+  .lab-head { display: flex; flex-direction: column; gap: 4px; }
+  .lab-head h3 {
+    font-size: 21px;
+    line-height: 1.1;
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+
+  .lab-chip {
+    margin-top: 6px;
+    display: inline-flex;
+    align-self: flex-start;
+    padding: 2px 8px;
+    border: 1px solid rgba(255, 59, 48, 0.4);
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--arterial);
+    background: rgba(255, 59, 48, 0.07);
+  }
+
+  .runline {
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid var(--hairline);
+    background: var(--panel-2);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    color: var(--ink-dim);
+  }
+
+  .runline .pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mint);
+    box-shadow: 0 0 0 0 rgba(70, 211, 154, 0.45);
+    animation: pulse 2.1s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(70, 211, 154, 0.4); }
+    50% { opacity: 0.6; box-shadow: 0 0 0 5px rgba(70, 211, 154, 0); }
+  }
+
+  .runline .ms { margin-left: auto; color: var(--ink-faint); font-size: 8px; }
+
+  .trace {
+    margin-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 9.7px;
+    line-height: 16px;
+    color: var(--ink-faint);
+    white-space: normal;
+    overflow: hidden;
+  }
+
+  .trace .line { display: block; white-space: pre; }
+  .trace .call { color: var(--ink-dim); }
+  .trace .call b { color: var(--ink); font-weight: 500; }
+  .trace .reentry { color: var(--arterial); }
+  .trace .gas { color: var(--ink-faint); }
+
+  .browser-foot {
+    margin-top: 12px;
+    padding-top: 9px;
+    border-top: 1px solid var(--hairline);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .browser-foot b { color: var(--mint); font-weight: 500; }
+
+  /* ── slide 4: evidence ─────────────────────────────────────────────── */
+
+  .s4 { padding-top: 82px; }
+
+  .s4-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; }
+
+  .s4-head h2 { font-size: 44px; }
+
+  .s4-meta {
+    flex: none;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    line-height: 1.7;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .s4-meta b { color: var(--arterial); font-weight: 500; }
+
+  .s4-body {
+    margin-top: 24px;
+    display: flex;
+    gap: 46px;
+    align-items: flex-start;
+    min-height: 0;
+  }
+
+  .ladder { flex: 1; min-width: 0; }
+
+  .call {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 88px;
+    align-items: baseline;
+    gap: 14px;
+    margin-left: calc(var(--i) * 27px);
+    padding: 7px 0 7px 16px;
+    border-left: 1px solid var(--hairline-strong);
+    position: relative;
+  }
+
+  .call::before {
+    content: "";
+    position: absolute;
+    left: -1px;
+    top: 19px;
+    width: 10px;
+    height: 1px;
+    background: var(--hairline-strong);
+  }
+
+  .call .fn {
+    font-family: var(--font-mono);
+    font-size: 17px;
+    line-height: 1.2;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .call .fn span { color: var(--arterial); }
+  .call .amt {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .call:first-child { border-left-color: var(--arterial); }
+  .call:first-child::before { background: var(--arterial); }
+  .call:first-child .fn { color: var(--ink); }
+
+  .call:nth-child(2) .fn,
+  .call:nth-child(3) .fn { color: var(--ink-dim); }
+
+  .call .re {
+    color: var(--arterial);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-left: 8px;
+  }
+
+  .ladder-foot {
+    margin-top: 13px;
+    padding-top: 11px;
+    border-top: 1px solid var(--hairline);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .ladder-foot b { color: var(--arterial); font-weight: 500; }
+
+  .ledger {
+    flex: 0 0 356px;
+    border-left: 1px solid var(--hairline);
+    padding-left: 26px;
+  }
+
+  .ledger-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    gap: 14px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .ledger-row dt {
+    font-family: var(--font-mono);
+    font-size: 8.8px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .ledger-row dd {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .ledger-row dd.loss { font-size: 22px; line-height: 1; color: var(--arterial); }
+
+  .diff {
+    margin-top: 14px;
+    border-top: 1px solid var(--hairline);
+    padding-top: 12px;
+  }
+
+  .diff-row {
+    display: grid;
+    grid-template-columns: 1fr 62px 12px 62px;
+    align-items: baseline;
+    gap: 6px;
+    padding: 5px 0;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+  }
+
+  .diff-row .lbl { color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .diff-row .before { color: var(--ink-faint); text-align: right; }
+  .diff-row .after { color: var(--arterial); text-align: right; }
+  .diff-row .arrow { position: relative; height: 1px; background: var(--hairline-strong); align-self: center; }
+  .diff-row .arrow::after {
+    content: "";
+    position: absolute;
+    right: -1px;
+    top: -2px;
+    border-left: 3px solid var(--hairline-strong);
+    border-top: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+  }
+
+  .ledger-note {
+    margin-top: 14px;
+    font-size: 10.5px;
+    line-height: 1.55;
+    color: var(--ink-faint);
+  }
+
+  .nodefield {
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .ticks {
+    display: flex;
+    gap: 4px;
+    height: 13px;
+    align-items: flex-end;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  .ticks i {
+    display: block;
+    flex: 0 0 3px;
+    width: 3px;
+    height: 5px;
+    background: var(--hairline-strong);
+  }
+
+  .ticks i.hit { height: 12px; background: var(--arterial); }
+
+  .nodefield-label {
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 8.8px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .nodefield-label b { color: var(--ink-dim); font-weight: 500; }
+
+  /* ── slide 5: detectors ────────────────────────────────────────────── */
+
+  .s5 { padding-top: 82px; }
+
+  .s5 h2 { font-size: 46px; }
+
+  .s5 .lede { max-width: 760px; margin-top: 12px; }
+
+  .s5-body {
+    margin-top: 22px;
+    display: flex;
+    gap: 44px;
+    align-items: flex-start;
+    min-height: 0;
+  }
+
+  .detectors { flex: 1; min-width: 0; border-top: 1px solid var(--hairline-strong); }
+
+  .det-head, .det-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 116px 44px;
+    gap: 12px;
+    align-items: baseline;
+  }
+
+  .det-head {
+    padding: 8px 0 7px;
+    border-bottom: 1px solid var(--hairline);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .det-head span:last-child { text-align: right; }
+
+  .det-row {
+    padding: 5.5px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .det-name {
+    font-size: 14px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .det-signal {
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .det-signal.both { color: var(--ink-dim); }
+  .det-signal.narrative { color: var(--amber); }
+
+  .det-cap {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    text-align: right;
+  }
+
+  .limits {
+    flex: 0 0 370px;
+    border-left: 1px solid var(--hairline);
+    padding-left: 26px;
+  }
+
+  .limit-lead {
+    font-size: 17px;
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+
+  .limit { margin-top: 18px; border-top: 1px solid var(--hairline); padding-top: 11px; }
+
+  .limit h4 {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--arterial);
+    font-weight: 500;
+  }
+
+  .limit p {
+    margin-top: 7px;
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+  }
+
+  .limits blockquote {
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--hairline);
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--ink-faint);
+  }
+
+  .s5-foot {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--hairline);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ── slide 6: artefact ─────────────────────────────────────────────── */
+
+  .s6 { padding-top: 82px; }
+
+  .s6-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; }
+  .s6-head h2 { font-size: 48px; }
+  .s6-head .lede { max-width: 620px; margin-top: 10px; }
+
+  .s6-body {
+    margin-top: 20px;
+    display: flex;
+    gap: 42px;
+    align-items: flex-start;
+    min-height: 0;
+  }
+
+  .spec { flex: 1; min-width: 0; border-top: 1px solid var(--hairline-strong); }
+
+  .spec-head, .spec-row {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 16px;
+    align-items: baseline;
+  }
+
+  .spec-head {
+    padding: 7px 0 6px;
+    border-bottom: 1px solid var(--hairline);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .spec-row {
+    padding: 5.5px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .spec-file {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .spec-desc { font-size: 10.5px; line-height: 1.35; color: var(--ink-faint); }
+
+  .spec-row.is-custody .spec-file { color: var(--arterial); }
+  .spec-row.is-custody .spec-desc { color: var(--ink-dim); }
+
+  .manifest {
+    flex: 0 0 390px;
+    border-left: 1px solid var(--hairline);
+    padding-left: 24px;
+  }
+
+  .manifest-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  .manifest-head::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    background: var(--arterial);
+  }
+
+  .manifest pre {
+    margin: 12px 0 0;
+    padding: 13px 14px;
+    border: 1px solid var(--hairline);
+    background: var(--panel);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    line-height: 1.6;
+    color: var(--ink-dim);
+    overflow: hidden;
+    white-space: pre;
+  }
+
+  .manifest .k { color: var(--ink-faint); }
+  .manifest .v { color: var(--ink); }
+  .manifest .h { color: var(--mint); }
+  .manifest .n { color: var(--arterial); }
+
+  .manifest-note {
+    margin-top: 12px;
+    font-size: 10px;
+    line-height: 1.55;
+    color: var(--ink-faint);
+  }
+
+  /* ── slide 7: honesty ──────────────────────────────────────────────── */
+
+  .s7 { padding-top: 82px; }
+
+  .s7 h2 { font-size: 46px; }
+
+  .big-state {
+    margin-top: 14px;
+    font-size: 29px;
+    line-height: 1.16;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+
+  .big-state b { color: var(--arterial); font-weight: 500; }
+
+  .truth {
+    margin-top: 26px;
+    display: flex;
+    gap: 0;
+    border-top: 1px solid var(--hairline-strong);
+    min-height: 0;
+  }
+
+  .truth-col { flex: 1; min-width: 0; padding: 18px 30px 0 0; }
+  .truth-col + .truth-col { border-left: 1px solid var(--hairline); padding-left: 30px; }
+
+  .truth-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .truth-col.real .truth-label { color: var(--mint); }
+  .truth-col.simulated .truth-label { color: var(--amber); }
+
+  .truth-col ul { list-style: none; margin: 12px 0 0; padding: 0; }
+
+  .truth-col li {
+    position: relative;
+    padding: 8px 0 8px 14px;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--ink-dim);
+  }
+
+  .truth-col li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 15px;
+    width: 5px;
+    height: 5px;
+    background: var(--hairline-strong);
+  }
+
+  .truth-col.real li::before { background: var(--mint); }
+  .truth-col.simulated li::before { background: var(--amber); }
+
+  .s7-foot {
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--hairline);
+    max-width: 1050px;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--ink-faint);
+  }
+
+  .s7-foot b { color: var(--ink-dim); font-weight: 500; }
+
+  /* ── slide 8: ask ──────────────────────────────────────────────────── */
+
+  .s8 { padding-top: 82px; }
+
+  .s8-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 48px;
+  }
+
+  .s8-top h2 { font-size: 48px; }
+  .s8-top .lede { max-width: 560px; margin-top: 12px; }
+
+  .ask {
+    flex: 0 0 340px;
+    border-left: 1px solid var(--hairline);
+    padding-left: 22px;
+  }
+
+  .s7-meaning {
+    margin-top: 24px;
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+    border-top: 1px solid var(--hairline);
+    padding-top: 13px;
+  }
+
+  .s7-meaning p {
+    max-width: 780px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+  }
+
+  .s7-meaning p b { color: var(--ink); font-weight: 500; }
+
+  .ask p {
+    margin-top: 8px;
+    font-size: 17px;
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+
+  .next-list {
+    margin-top: 26px;
+    border-top: 1px solid var(--hairline-strong);
+  }
+
+  .next-row {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 24px;
+    align-items: baseline;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .next-title {
+    font-size: 22px;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  .next-body { font-size: 12.5px; line-height: 1.5; color: var(--ink-dim); max-width: 620px; }
+
+  .s8-foot {
+    margin-top: auto;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 40px;
+    border-top: 1px solid var(--hairline);
+    padding-top: 14px;
+  }
+
+  .run { display: flex; flex-direction: column; gap: 8px; }
+
+  .run code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+
+  .run code b { color: var(--ink); font-weight: 500; }
+  .run code span { color: var(--ink-faint); }
+
+  .end-mark {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    font-size: 36px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--ink);
+  }
+
+  .end-mark span {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ── still mode for slide-by-slide screenshots ─────────────────────── */
+
+  body.still #viewport { padding: 0; }
+  body.still #stage { transform: scale(1) !important; }
+  body.still .slide { transition: none; }
+  body.still .slide .content { transition: none; }
+  body.still .slide::before { animation: none; opacity: 0; }
+  body.still .slide:not(.is-active) { display: none; }
+  body.still .hud, body.still .rail, body.still .zone { display: none; }
+  body.still .slide { padding-bottom: 56px; }
+
+  /* ── reduced motion: kill the wipe and every transition ────────────── */
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+    .slide::before { display: none; }
+  }
+
+  /* ── print: one slide per 1280 × 720 page, in colour ───────────────── */
+
+  @page {
+    size: 1280px 720px;
+    margin: 0;
+  }
+
+  @media print {
+    html, body {
+      width: 1280px;
+      height: auto;
+      overflow: visible;
+      background: var(--ground);
+    }
+
+    #viewport {
+      position: static;
+      display: block;
+      padding: 0;
+      width: 1280px;
+      height: auto;
+    }
+
+    #stage {
+      position: static;
+      width: 1280px;
+      height: auto;
+      transform: none !important;
+    }
+
+    .slide {
+      position: relative;
+      display: flex !important;
+      width: 1280px;
+      height: 720px;
+      opacity: 1 !important;
+      visibility: visible !important;
+      transition: none !important;
+      page-break-after: always;
+      break-after: page;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .slide:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+
+    .slide .content { opacity: 1 !important; transition: none !important; }
+    .slide::before { display: none !important; }
+
+    .hud, .rail, .zone { display: none !important; }
+
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <main id="stage" aria-label="Mayall pitch deck">
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         1 — TITLE
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="slide is-active" id="slide-1" data-title="Mayall">
+      <div class="content s1">
+        <div class="s1-left">
+          <h1 class="hero-name">Mayall</h1>
+          <p class="hero-line">A forensic console for Web3 exploits.</p>
+          <p class="hero-claim">
+            Block explorers show you <strong>that</strong> something happened. Mayall reconstructs
+            <strong>how</strong> — the call tree, the storage writes, the balance movement — and packages
+            the evidence so anyone can verify it.
+          </p>
+        </div>
+
+        <aside class="s1-plate" aria-label="Live specimen summary">
+          <div class="plate-label">Live specimen / reentrancy</div>
+          <div class="plate-tree" aria-hidden="true">
+            <div class="plate-call is-first" style="--i:0">ReentrancyVault::withdraw()<em>6 ETH</em></div>
+            <div class="plate-call" style="--i:1">ReentrancyVault::withdraw()</div>
+            <div class="plate-call" style="--i:2">ReentrancyVault::withdraw()</div>
+            <div class="plate-call" style="--i:3">ReentrancyVault::withdraw()</div>
+            <div class="plate-call" style="--i:4">ReentrancyVault::withdraw()</div>
+            <div class="plate-call" style="--i:5">ReentrancyVault::withdraw()</div>
+            <div class="plate-call" style="--i:6">ReentrancyVault::withdraw()</div>
+          </div>
+          <div class="plate-rule"></div>
+          <dl class="plate-data">
+            <div class="plate-row"><dt>Call-tree nodes</dt><dd>83</dd></div>
+            <div class="plate-row"><dt>Nested withdraw()</dt><dd>7&times;</dd></div>
+            <div class="plate-row"><dt>Drained</dt><dd class="loss">6 ETH</dd></div>
+            <div class="plate-row"><dt>Detector confidence</dt><dd>97%</dd></div>
+          </dl>
+        </aside>
+      </div>
+
+      <footer class="s1-stats">
+        <span><b>16</b> public incidents</span>
+        <span class="stat-sep" aria-hidden="true"></span>
+        <span><b>5</b> chains</span>
+        <span class="stat-sep" aria-hidden="true"></span>
+        <span><b>~$2.39B</b> reported losses</span>
+        <span class="stat-sep" aria-hidden="true"></span>
+        <span><b>10</b> reproduced locally</span>
+        <span class="stat-sep" aria-hidden="true"></span>
+        <span><b>6</b> live scenarios</span>
+      </footer>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         2 — THE PROBLEM
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-2" data-title="The problem">
+      <div class="content s2">
+        <div class="s2-left">
+          <h2>Explorers show you that.<br />Incident responders<br />need how.</h2>
+          <p class="lede">
+            A block explorer gives you the transaction, the value that moved and the addresses.
+            It does not give you the call that re-entered, the slot that was rewritten, or the
+            invariant that stopped holding. That reconstruction is the incident response work.
+          </p>
+          <p class="s2-note">
+            Six attack classes ship as live local reproductions, each with a deliberately vulnerable
+            contract and a Foundry proof-of-concept. The taxonomy models sixteen attack vectors.
+          </p>
+        </div>
+
+        <div class="vector-list" role="list" aria-label="Six attack vectors">
+          <div class="vector-row" role="listitem">
+            <span class="tick" aria-hidden="true"></span>
+            <span class="vector-name">Reentrancy</span>
+            <span class="vector-desc">state written after the transfer</span>
+          </div>
+          <div class="vector-row" role="listitem">
+            <span class="tick" aria-hidden="true"></span>
+            <span class="vector-name">Oracle Manipulation</span>
+            <span class="vector-desc">price moved inside the transaction</span>
+          </div>
+          <div class="vector-row" role="listitem">
+            <span class="tick" aria-hidden="true"></span>
+            <span class="vector-name">Access Control</span>
+            <span class="vector-desc">privileged path left open</span>
+          </div>
+          <div class="vector-row" role="listitem">
+            <span class="tick" aria-hidden="true"></span>
+            <span class="vector-name">Flash Loan</span>
+            <span class="vector-desc">borrowed capital, atomic execution</span>
+          </div>
+          <div class="vector-row" role="listitem">
+            <span class="tick" aria-hidden="true"></span>
+            <span class="vector-name">Delegatecall</span>
+            <span class="vector-desc">storage taken through a library call</span>
+          </div>
+          <div class="vector-row" role="listitem">
+            <span class="tick" aria-hidden="true"></span>
+            <span class="vector-name">Self-Destruct</span>
+            <span class="vector-desc">escrow balance forced out</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         3 — THE DEMO
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-3" data-title="The demo">
+      <div class="content s3">
+        <div class="s3-left">
+          <h2>Ninety seconds. One exploit. Every call.</h2>
+          <p class="lede">
+            The demo is a single run in the local lab. No mocks, no canned video:
+            Foundry executes the proof-of-concept and the console renders what came back.
+          </p>
+
+          <ol class="clickpath">
+            <li>
+              <span class="step-lbl">Open</span>
+              <span><code>http://localhost:3000/lab</code></span>
+            </li>
+            <li>
+              <span class="step-lbl">Select</span>
+              <span><code>reentrancy</code> — Re-entrant Withdrawal Drain</span>
+            </li>
+            <li>
+              <span class="step-lbl">Press</span>
+              <span><b>Run simulation</b></span>
+            </li>
+            <li>
+              <span class="step-lbl">Watch</span>
+              <span>the call tree, storage diff, findings and gas flame land</span>
+            </li>
+          </ol>
+
+          <p class="s3-timing">Full suite &middot; 6 scenarios &middot; <b>~1.3 s</b></p>
+        </div>
+
+        <div class="s3-right">
+          <div class="browser" aria-label="Live lab trace preview">
+            <div class="browser-bar">
+              <span class="sq" aria-hidden="true"></span>
+              <span class="sq" aria-hidden="true"></span>
+              <span class="sq" aria-hidden="true"></span>
+              <span class="url">localhost:3000/lab</span>
+              <span class="live">LIVE</span>
+            </div>
+            <div class="browser-body">
+              <div class="lab-head">
+                <span class="micro">Scenario &middot; Foundry harness</span>
+                <h3>Re-entrant Withdrawal Drain</h3>
+                <span class="lab-chip">Reentrancy</span>
+              </div>
+
+              <div class="runline">
+                <span class="pulse" aria-hidden="true"></span>
+                Executing reentrancy
+                <span class="ms">forge test -vvvv</span>
+              </div>
+
+              <div class="trace" aria-label="Call trace excerpt">
+                <span class="line call">[225 ms] new <b>ReentrancyVault</b>@0x5615dEB7<span class="gas">  [21000]</span></span>
+                <span class="line call">  +- deposit() <span class="gas">1 ETH</span></span>
+                <span class="line call">  +- <b>ReentrancyVault::withdraw()</b></span>
+                <span class="line call">  |   +- attacker.receive()</span>
+                <span class="line reentry">  |   |   +- ReentrancyVault::withdraw()   &lt;- re-entry</span>
+                <span class="line reentry">  |   |   |   +- attacker.receive()</span>
+                <span class="line reentry">  |   |   |   |   +- ReentrancyVault::withdraw()   &lt;- re-entry</span>
+                <span class="line call">  |   |   |   |   |   +- ... <span class="gas">4 more nested frames</span></span>
+                <span class="line call">  |   |   |   +- &lt;- [Return]</span>
+                <span class="line call">  +- &lt;- [Stop]</span>
+              </div>
+
+              <div class="browser-foot">
+                <span><b>6/6</b> scenarios pass</span>
+                <span>trace &middot; storage &middot; balances &middot; findings &middot; flame</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         4 — THE EVIDENCE
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-4" data-title="The evidence">
+      <div class="content s4">
+        <div class="s4-head">
+          <h2>One function.<br />Seven nested calls.<br />Six ETH.</h2>
+          <div class="s4-meta">
+            Reentrancy run<br />
+            ReentrancyVault &middot; one transaction<br />
+            <b>single-tx drain</b>
+          </div>
+        </div>
+
+        <div class="s4-body">
+          <div class="ladder" aria-label="Seven nested withdraw calls">
+            <div class="call" style="--i:0">
+              <span class="fn">ReentrancyVault::withdraw()</span>
+              <span class="amt">6 ETH out</span>
+            </div>
+            <div class="call" style="--i:1">
+              <span class="fn">ReentrancyVault::withdraw()</span>
+              <span class="amt">re-entry</span>
+            </div>
+            <div class="call" style="--i:2">
+              <span class="fn">ReentrancyVault::withdraw()</span>
+              <span class="amt">re-entry</span>
+            </div>
+            <div class="call" style="--i:3">
+              <span class="fn">ReentrancyVault::withdraw()</span>
+              <span class="amt">re-entry</span>
+            </div>
+            <div class="call" style="--i:4">
+              <span class="fn">ReentrancyVault::withdraw()</span>
+              <span class="amt">re-entry</span>
+            </div>
+            <div class="call" style="--i:5">
+              <span class="fn">ReentrancyVault::withdraw()</span>
+              <span class="amt">re-entry</span>
+            </div>
+            <div class="call" style="--i:6">
+              <span class="fn">ReentrancyVault::withdraw()<span class="re">7&times;</span></span>
+              <span class="amt">same entry point</span>
+            </div>
+            <div class="ladder-foot">
+              The same function, nested inside its own receiver callback &middot;
+              <b>one transaction</b>
+            </div>
+          </div>
+
+          <aside class="ledger" aria-label="Evidence ledger">
+            <dl>
+              <div class="ledger-row"><dt>Call tree</dt><dd>83 nodes</dd></div>
+              <div class="ledger-row"><dt>Nested calls</dt><dd>7 &times; withdraw()</dd></div>
+              <div class="ledger-row"><dt>Drained</dt><dd class="loss">6 ETH</dd></div>
+              <div class="ledger-row"><dt>Top detection</dt><dd>Reentrancy &middot; 97%</dd></div>
+            </dl>
+
+            <div class="diff">
+              <div class="diff-row">
+                <span class="lbl">totalWithdrawn</span>
+                <span class="before">0 ETH</span>
+                <span class="arrow" aria-hidden="true"></span>
+                <span class="after">6 ETH</span>
+              </div>
+              <div class="diff-row">
+                <span class="lbl">vault balance</span>
+                <span class="before">10 ETH</span>
+                <span class="arrow" aria-hidden="true"></span>
+                <span class="after">4 ETH</span>
+              </div>
+            </div>
+
+            <p class="ledger-note">
+              Root cause: <span class="mono">withdraw()</span> transfers ETH before zeroing
+              <span class="mono">balances[msg.sender]</span>, so a malicious receiver re-enters and
+              the vault pays the same balance repeatedly.
+            </p>
+          </aside>
+        </div>
+
+        <div class="nodefield">
+          <div class="ticks" id="ticks" aria-hidden="true"></div>
+          <div class="nodefield-label"><b>83 call-tree nodes captured</b> &middot; 7 withdraw frames highlighted</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         5 — THE DETECTORS
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-5" data-title="The detectors">
+      <div class="content s5">
+        <h2>Ten detectors. Confidence, never certainty.</h2>
+        <p class="lede">
+          Every simulation is scored by ten pattern detectors. Each finding carries a confidence,
+          a severity, a rationale and evidence pointers that are rendered verbatim in the report.
+        </p>
+
+        <div class="s5-body">
+          <div class="detectors" role="table" aria-label="Pattern detectors">
+            <div class="det-head" role="row">
+              <span role="columnheader">Detector</span>
+              <span role="columnheader">Signal</span>
+              <span role="columnheader">Cap</span>
+            </div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Reentrancy</span><span class="det-signal both" role="cell">trace + narrative</span><span class="det-cap" role="cell">0.97</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Flash Loan</span><span class="det-signal both" role="cell">trace + narrative</span><span class="det-cap" role="cell">0.97</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Oracle Manipulation</span><span class="det-signal both" role="cell">trace + narrative</span><span class="det-cap" role="cell">0.97</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Access Control Failure</span><span class="det-signal both" role="cell">trace + narrative</span><span class="det-cap" role="cell">0.97</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Delegate Call Injection</span><span class="det-signal both" role="cell">trace + narrative</span><span class="det-cap" role="cell">0.98</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Self Destruct / Forced Transfer</span><span class="det-signal both" role="cell">trace + narrative</span><span class="det-cap" role="cell">0.97</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Arithmetic / Precision Fault</span><span class="det-signal both" role="cell">trace + narrative</span><span class="det-cap" role="cell">0.95</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Front Running</span><span class="det-signal narrative" role="cell">narrative</span><span class="det-cap" role="cell">0.93</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Bridge Verification Failure</span><span class="det-signal narrative" role="cell">narrative</span><span class="det-cap" role="cell">0.95</span></div>
+            <div class="det-row" role="row"><span class="det-name" role="cell">Invariant / Logic Error</span><span class="det-signal narrative" role="cell">narrative</span><span class="det-cap" role="cell">0.70</span></div>
+          </div>
+
+          <aside class="limits">
+            <p class="limit-lead">Some detectors key off narrative keywords. Two are deliberately weak, and we say so.</p>
+
+            <div class="limit">
+              <h4>Front Running</h4>
+              <p>
+                Every multi-step artifact emits a 0.55 finding. A single-transaction local trace
+                cannot observe mempool ordering: it infers, it does not detect.
+              </p>
+            </div>
+
+            <div class="limit">
+              <h4>Invariant / Logic Error</h4>
+              <p>
+                Fires only when the narrative uses one of five keywords. Its balance signal scores
+                0.50 and is gated out below 0.60.
+              </p>
+            </div>
+
+            <blockquote>
+              Confidence is the maximum of the evidence floors a rule triggered — never a sum — and
+              every rule is capped below 1.0.
+            </blockquote>
+          </aside>
+        </div>
+
+        <div class="s5-foot">
+          A finding is only as strong as the evidence it lists &middot; the report renders that evidence verbatim
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         6 — THE ARTEFACT
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-6" data-title="The artefact">
+      <div class="content s6">
+        <div class="s6-head">
+          <div>
+            <h2>One ZIP. Every file hashed.</h2>
+            <p class="lede">
+              The forensic bundle is generated per case, not assembled by hand. Report, raw trace,
+              storage diff, balances, timeline, findings, gas flame — and a SHA-256 manifest.
+            </p>
+          </div>
+        </div>
+
+        <div class="s6-body">
+          <div class="spec" role="table" aria-label="Forensic bundle contents">
+            <div class="spec-head" role="row">
+              <span role="columnheader">File</span>
+              <span role="columnheader">What it proves</span>
+            </div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">report/report.md</span><span class="spec-desc" role="cell">Seven-section case narrative; executive summary can be authored by MiniMax Code per case</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">report/report.json</span><span class="spec-desc" role="cell">The same report, machine-readable</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/artifact.json</span><span class="spec-desc" role="cell">Storage writes, balance deltas, ordered attack steps</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/trace.txt</span><span class="spec-desc" role="cell">The isolated forge call trace</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/foundry-stdout.txt</span><span class="spec-desc" role="cell">Raw execution log from the run</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/foundry-stderr.txt</span><span class="spec-desc" role="cell">Raw error stream, kept even when empty</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/storage-diff.csv</span><span class="spec-desc" role="cell">contract, slot, label, before, after, changed</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/balance-timeline.csv</span><span class="spec-desc" role="cell">Address, label, before/after wei, delta</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/timeline.csv</span><span class="spec-desc" role="cell">Ordered attack steps, gas and value</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/patterns.json</span><span class="spec-desc" role="cell">Detector findings with confidence and evidence</span></div>
+            <div class="spec-row" role="row"><span class="spec-file" role="cell">evidence/gas-flame.json</span><span class="spec-desc" role="cell">Gas weight per call frame</span></div>
+            <div class="spec-row is-custody" role="row"><span class="spec-file" role="cell">chain-of-custody.json</span><span class="spec-desc" role="cell">SHA-256 and byte count for every file, plus the exact command</span></div>
+          </div>
+
+          <aside class="manifest">
+            <div class="manifest-head">chain-of-custody.json &middot; excerpt</div>
+            <pre aria-label="Chain of custody manifest excerpt">{
+  <span class="k">"caseRef"</span>: <span class="v">"lab-reentrancy"</span>,
+  <span class="k">"scenario"</span>: <span class="v">"reentrancy"</span>,
+  <span class="k">"command"</span>: <span class="v">"forge test --match-path<br>             test/ReentrancyExploit.t.sol ..."</span>,
+  <span class="k">"durationMs"</span>: <span class="n">225</span>,
+  <span class="k">"ok"</span>: <span class="n">true</span>,
+  <span class="k">"files"</span>: [
+    {
+      <span class="k">"path"</span>: <span class="v">"report/report.md"</span>,
+      <span class="k">"sha256"</span>: <span class="h">"2ab53b87...a11842"</span>,
+      <span class="k">"bytes"</span>: <span class="n">4403</span>
+    },
+    ...
+  ]
+}</pre>
+            <p class="manifest-note">
+              Written last, so it does not hash itself. Recompute any entry and compare it with the
+              manifest to prove the evidence was not edited after export.
+            </p>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         7 — HONESTY
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-7" data-title="What is real">
+      <div class="content s7">
+        <h2>The chain state is local. The execution is not.</h2>
+        <p class="big-state">Mayall does not fork mainnet, and <b>does not claim to</b>.</p>
+
+        <div class="truth">
+          <div class="truth-col real">
+            <div class="truth-label">Real</div>
+            <ul>
+              <li>Solidity contracts, compiled and executed by Foundry</li>
+              <li>EVM call traces, gas figures and revert paths</li>
+              <li>Storage diffs read inside the test with cheatcodes</li>
+              <li>Deterministic detector output over the captured trace</li>
+              <li>SHA-256 chain of custody over every exported file</li>
+            </ul>
+          </div>
+
+          <div class="truth-col simulated">
+            <div class="truth-label">Simulated</div>
+            <ul>
+              <li>The chain is a local EVM, not mainnet state</li>
+              <li>Funds are test funds in a local simulation</li>
+              <li>Incident registry is seeded from public disclosures; losses rounded</li>
+              <li>Reproductions are our own contracts demonstrating the mechanism</li>
+              <li>Detectors are heuristics over one transaction: no bytecode, no mempool</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="s7-meaning">
+          <span class="micro">What this means</span>
+          <p>
+            Every trace, gas figure and storage write on screen came from the run in front of you.
+            <b>The incident registry is context; the execution is the evidence.</b>
+          </p>
+        </div>
+
+        <p class="s7-foot">
+          If a judge asks <b>“is this real?”</b> — the contracts, the EVM, the traces, the gas and the
+          storage diffs are. The chain state and the funds are a local simulation. That distinction is
+          the product, not a footnote.
+        </p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         8 — THE ASK / WHAT'S NEXT
+         ═══════════════════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-8" data-title="What's next">
+      <div class="content s8">
+        <div class="s8-top">
+          <div>
+            <h2>What we would build next.</h2>
+            <p class="lede">
+              The hard part is already working: reproduce, reconstruct, classify, package. The next
+              step is to point it at real incidents.
+            </p>
+          </div>
+          <aside class="ask">
+            <span class="micro">The ask</span>
+            <p>Bring us one real incident.</p>
+          </aside>
+        </div>
+
+        <div class="next-list">
+          <div class="next-row">
+            <span class="next-title">Mainnet fork replay</span>
+            <span class="next-body">
+              Point the same reconstruction at archived chain state for a real incident transaction.
+              Same trace, same detections, real historical state.
+            </span>
+          </div>
+          <div class="next-row">
+            <span class="next-title">More chains, more vectors</span>
+            <span class="next-body">
+              Expand past the six local reproductions and the ten detectors exercised here — more
+              scenarios per vector, and more execution environments.
+            </span>
+          </div>
+          <div class="next-row">
+            <span class="next-title">ML-assisted triage</span>
+            <span class="next-body">
+              Rank findings and draft the executive summary from the evidence, with the evidence still
+              attached and every claim traceable.
+            </span>
+          </div>
+        </div>
+
+        <div class="s8-foot">
+          <div class="run">
+            <span class="micro">Three commands to reproduce it</span>
+            <code><b>npm install</b> <span>&middot;</span> <b>npm run setup:foundry</b> <span>&middot;</span> <b>npm run dev</b></code>
+            <code><span>then open</span> <b>localhost:3000/lab</b></code>
+          </div>
+          <div class="end-mark">Mayall <span>show the how</span></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- fixed chrome -->
+<header class="hud" aria-hidden="true">
+  <div class="hud-left">
+    <span class="hud-mark"><i></i></span>
+    <span class="wordmark">Mayall</span>
+    <span class="hud-sep"></span>
+    <span>Forensic console</span>
+  </div>
+  <div class="hud-right">
+    <span class="hud-hint">&larr; &rarr; &middot; space</span>
+    <span class="hud-counter"><b id="current">01</b> / <span id="total">08</span></span>
+  </div>
+</header>
+
+<div class="rail" aria-hidden="true">
+  <div class="rail-fill" id="railFill"></div>
+  <div class="rail-ticks">
+    <span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span>
+  </div>
+</div>
+
+<button class="zone zone-prev" id="prevZone" type="button" aria-label="Previous slide">
+  <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+</button>
+<button class="zone zone-next" id="nextZone" type="button" aria-label="Next slide">
+  <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+</button>
+
+<script>
+(function () {
+  "use strict";
+
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var stage = document.getElementById("stage");
+  var viewport = document.getElementById("viewport");
+  var currentEl = document.getElementById("current");
+  var totalEl = document.getElementById("total");
+  var railFill = document.getElementById("railFill");
+  var prevZone = document.getElementById("prevZone");
+  var nextZone = document.getElementById("nextZone");
+
+  var params = new URLSearchParams(window.location.search);
+  var still = params.get("still") === "1";
+  var requested = parseInt(params.get("slide") || "", 10);
+  var hashMatch = window.location.hash.match(/slide-(\d+)/);
+  var index = 0;
+
+  if (!isNaN(requested) && requested >= 1 && requested <= slides.length) {
+    index = requested - 1;
+  } else if (hashMatch) {
+    var h = parseInt(hashMatch[1], 10);
+    if (h >= 1 && h <= slides.length) index = h - 1;
+  }
+
+  if (still) document.body.classList.add("still");
+
+  totalEl.textContent = String(slides.length).padStart(2, "0");
+
+  function render() {
+    slides.forEach(function (slide, i) {
+      var active = i === index;
+      slide.classList.toggle("is-active", active);
+      slide.setAttribute("aria-hidden", active ? "false" : "true");
+    });
+
+    currentEl.textContent = String(index + 1).padStart(2, "0");
+    railFill.style.width = (((index + 1) / slides.length) * 100).toFixed(4) + "%";
+
+    if (!still) {
+      var title = slides[index].getAttribute("data-title") || "";
+      document.title = index === 0 ? "Mayall — Web3 Exploit Forensics Console" : "Mayall — " + title;
+      try {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, "", "#slide-" + (index + 1));
+        }
+      } catch (ignored) {
+        /* file:// origins can refuse history writes; navigation still works */
+      }
+    }
+  }
+
+  function go(next) {
+    var target = Math.max(0, Math.min(slides.length - 1, next));
+    if (target === index) return;
+    index = target;
+    render();
+  }
+
+  function resize() {
+    if (still) {
+      stage.style.transform = "scale(1)";
+      return;
+    }
+    var pad = 52;
+    var scale = Math.min(
+      (window.innerWidth - pad) / 1280,
+      (window.innerHeight - pad) / 720
+    );
+    scale = Math.max(0.2, Math.min(scale, 1.6));
+    stage.style.transform = "scale(" + scale.toFixed(4) + ")";
+  }
+
+  document.addEventListener("keydown", function (event) {
+    if (event.defaultPrevented) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+    var key = event.key;
+    var code = event.keyCode;
+
+    if (key === "ArrowRight" || key === "ArrowDown" || key === "PageDown" ||
+        key === " " || key === "Spacebar" || code === 39 || code === 34 || code === 32) {
+      event.preventDefault();
+      go(index + 1);
+    } else if (key === "ArrowLeft" || key === "ArrowUp" || key === "PageUp" ||
+               key === "Backspace" || code === 37 || code === 33) {
+      event.preventDefault();
+      go(index - 1);
+    } else if (key === "Home" || code === 36) {
+      event.preventDefault();
+      go(0);
+    } else if (key === "End" || code === 35) {
+      event.preventDefault();
+      go(slides.length - 1);
+    }
+  });
+
+  prevZone.addEventListener("click", function () { go(index - 1); });
+  nextZone.addEventListener("click", function () { go(index + 1); });
+
+  window.addEventListener("resize", resize);
+
+  // 83 real call-tree nodes, 7 of them the repeated withdraw frames.
+  var ticks = document.getElementById("ticks");
+  if (ticks) {
+    for (var i = 0; i < 83; i++) {
+      var tick = document.createElement("i");
+      if (i < 7) tick.className = "hit";
+      ticks.appendChild(tick);
+    }
+  }
+
+  render();
+  resize();
+})();
+</script>
+</body>
+</html>

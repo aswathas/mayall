@@ -1,0 +1,141 @@
+# BRIEF — MAYALL FORENSIC REEL (motion graphics as code → real MP4)
+
+You are one of several parallel agents in `C:\Users\aswat\Projects\w3-forensics`.
+The product is **Mayall** — a Web3 exploit forensics tool that runs REAL Foundry exploit
+simulations, parses the real `forge -vvvv` call trace, runs 10 heuristic detectors, and emits a
+forensic report + evidence bundle.
+
+Your job: produce a **judge-facing motion piece** — a real MP4, rendered frame by frame from code —
+that shows what Mayall does, using REAL data from this repo. This is the hackathon pitch reel.
+
+## THE SKILL YOU MUST FOLLOW — read it in full, it is the contract
+`C:\Users\aswat\Projects\w3-forensics\.claude\skills\motion-graphics\SKILL.md`
+(and the identical copy at `.agents/skills/motion-graphics/SKILL.md`).
+
+It is binding. Key rules you must obey:
+- **Storyboard before code.** Write the shot list (start time, end time, what is on screen, what the
+  viewer must read, the transition out) into `docs/motion/reel-storyboard.md` BEFORE writing
+  animation code. Every "read" gets its own slot. Hook inside the first second. Something happens in
+  every shot. Hold the final frame 0.8–1.2 s.
+- **One `scene.html`** that can draw any moment on request: expose `window.renderAt(t)` AND run a
+  normal `requestAnimationFrame` preview loop reading `performance.now()`.
+- **Every frame is a pure function of time.** No per-frame counters, no unseeded `Math.random()`, no
+  stepped physics, no timer-triggered CSS transitions. Seed all randomness.
+- `await document.fonts.ready` before the first frame.
+- Style written as numbers: hex colours, cubic-bezier curves, frame counts for staggers, grid margins.
+- Text stays inside a 5% safe margin.
+- Avoid list: particle bursts, lens flares, neon glow, RGB split, glitch, bouncy easing on
+  everything, decorative gradients, text that repeats what the picture already shows.
+- **Review before the full render**: render a CONTACT SHEET (one frame per second, tiled into one
+  PNG), OPEN IT AND LOOK AT IT, fix what you find, then render a half-resolution draft, then the final.
+
+## THE RENDER TOOLCHAIN (all present — verify before starting)
+- ffmpeg: `C:\Users\aswat\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe` (and `ffprobe.exe`).
+  `ffmpeg` IS on PATH already — verify with `ffmpeg -version`.
+- `playwright-core` is installed at the repo root (it drives your installed Google Chrome via
+  `channel: 'chrome'`).
+- The reference render script is saved at `scripts/claude-video-render.mjs` — READ IT and use it:
+  `node scripts/claude-video-render.mjs <scene.html> <out.mp4> <seconds> <fps> <width> <height>`
+  It drives a virtual clock (`performance.now`, `Date.now`, `requestAnimationFrame` all replaced),
+  advances exactly 1/fps per frame, screenshots each frame and pipes PNGs into ffmpeg.
+  You may copy it to `docs/motion/` and adjust it (e.g. to also emit the contact sheet), but keep
+  the virtual-clock discipline intact.
+
+## REAL DATA — you must use it, never invent it
+Read these for the numbers, the trace and the palette:
+- `artifacts/bundles/lab-reentrancy-forensic-bundle.zip` — unzip to a temp dir under `artifacts/motion/`.
+  It contains `evidence/trace.txt` (the REAL `forge -vvvv` output, ~120 lines),
+  `evidence/patterns.json` (the REAL detector findings), `evidence/gas-flame.json`,
+  `evidence/storage-diff.csv`, `evidence/balance-timeline.csv`, `evidence/artifact.json`,
+  `report/report.md`.
+- `packages/forensic-engine/src/trace-parser.ts` — the parser you are explaining (depth =
+  `floor(branchIndex / 4)`).
+- `packages/forensic-engine/src/detectors.ts` — the 10 detectors + `DETECTOR_CATALOG` (`looksFor`,
+  `emits`, `limitation`).
+- `packages/web/app/globals.css` — the exact palette. Dark theme tokens include
+  `--hx-panel: #110b0d`, `--hx-edge: #2b1a1e`, `--hx-edge-strong: #3d2429`, `--hx-ink: #f7eded`,
+  `--hx-ink-dim: #c3a7aa`, `--hx-ink-faint: #8f7276`, `--hx-arterial: #ff3b30`,
+  `--hx-arterial-deep: #b31f18`, `--hx-amber: #f5b942`. Read the file for the rest (background,
+  surfaces, fonts).
+- Fonts: the product uses **Familjen Grotesk** (display), **Public Sans** (body) and **JetBrains Mono**
+  (data). Load them from Google Fonts in the scene via a `<link>` (the render script waits on
+  `networkidle` and then `document.fonts.ready`). If the network is unavailable, fall back to a
+  local system stack and say so in your report — but try the real fonts first.
+
+The MEASURED facts you may state on screen (these are verified, do not alter them):
+- reentrancy scenario: **6 ETH** drained, `withdraw()` called **7×** nested, **83-node** trace,
+  Reentrancy detector confidence **97%**.
+- the six local scenarios and their losses: reentrancy 6 ETH · oracle-manipulation 40 ETH ·
+  access-control 50 ETH · flash-loan 250 ETH · delegatecall 50 ETH · selfdestruct 60 ETH.
+- registry: 16 real public incidents, ~$2.39B total loss, 5 chains, 16 attack vectors modelled,
+  10 detectors, 6 live reproductions.
+- The product is **Mayall**. Never write "HELIX" in the reel.
+
+## THE REEL SPEC (follow this; adjust only if a shot would otherwise be dead time)
+- 16:9, **1920×1080**, **24 fps** (24 keeps the file small and the motion legible),
+  duration **~26 seconds**.
+- Style (one named style): **"Red Room instrument"** — warm-black ground, arterial red reserved for
+  DATA and ALERT only, bone-white chrome for interface, JetBrains Mono for every number, thin
+  hairline rules, no decorative gradients, no glow. It must look like a forensic instrument reading
+  out, not a promo.
+- No audio (the skill's silence path). State this in your report.
+
+Suggested shot list (you may refine it, but keep the beats and the timing discipline):
+1. **0.0–2.2s — HOOK.** A single real trace line types in, then a red number counts to `6 ETH`.
+   The viewer must read: *money left a vault*. Hook inside the first second.
+2. **2.2–7.0s — THE TRACE.** The real `forge -vvvv` lines scroll, and the call tree materialises
+   beside them with depth badges (show the `├─`/`└─` indentation being measured — depth =
+   `floor(branchIndex/4)`). The viewer must read: *this is a real nested call trace*.
+3. **7.0–12.5s — THE RECURSION.** The 7 nested `withdraw()` calls draw as a depth-annotated tree.
+   The viewer must read: *the same function re-entered itself*.
+4. **12.5–17.0s — THE DETECTOR.** The Reentrancy rule from `DETECTOR_CATALOG` appears, the matching
+   nodes highlight, confidence `97%` resolves. The viewer must read: *a rule fired on the evidence*.
+5. **17.0–22.0s — THE EVIDENCE.** Storage diff, balance timeline and the bundle manifest
+   (`chain-of-custody.json`) appear as three panels with real values. The viewer must read: *this
+   becomes evidence, not a screenshot*.
+6. **22.0–26.0s — THE PRODUCT.** Mayall wordmark, and one honest line: `Local Foundry simulation.
+   Not mainnet evidence.` Hold the final frame ~1.0 s.
+
+## YOUR EXCLUSIVE FILE OWNERSHIP
+You own and may create/modify ONLY:
+- `docs/motion/**`
+- `artifacts/motion/**`
+- `scripts/render-reel.mjs` (your wrapper around the render script — contact sheet, draft, final)
+- `scripts/claude-video-render.mjs` (you may adjust this copy)
+
+DO NOT edit: `packages/**`, `contracts/**`, `docs/design/**`, `docs/pitch/**`, `docs/other-docs/**`,
+`data/**`, `artifacts/bundles/**`, `artifacts/*.json`. Other agents own those.
+If you need a change there, do NOT make it — note it in your final report.
+
+## DELIVERABLES
+1. `docs/motion/reel-storyboard.md` — the shot list, written BEFORE the animation code, with the
+   timing, what is on screen, the read, and the transition out for every shot.
+2. `docs/motion/scene.html` — the single scene file with `window.renderAt(t)` + the rAF preview loop.
+3. `artifacts/motion/contact-sheet.png` — the one-frame-per-second contact sheet YOU LOOKED AT.
+4. `artifacts/motion/draft.mp4` — the half-resolution draft.
+5. `artifacts/motion/mayall-reel.mp4` — the FINAL 1920×1080 MP4 (h264, yuv420p, +faststart).
+   Verify it with `ffprobe` and report the real duration/fps/resolution/size.
+6. `docs/motion/README.md` — how to re-render, the style rules as numbers, and the two weakest
+   moments with how you would fix them in another round.
+
+## HARD CONSTRAINTS
+- Do NOT `npm install` anything. `playwright-core` is already installed.
+- `rm` is policy-gated on this machine — write new files rather than deleting. If you must replace
+  one of YOUR OWN files, just overwrite it.
+- Do not modify `scripts/claude-video-render.mjs` in a way that breaks the virtual-clock discipline.
+- Never state a number in the reel that is not in the real data files listed above.
+- Be honest in the reel: local simulation, heuristic detectors.
+
+## VERIFICATION (all of it, before you finish)
+1. `ffmpeg -version` works; `node scripts/claude-video-render.mjs` runs.
+2. The contact sheet PNG exists — READ IT with the read tool and LOOK at it. Fix overlapping text,
+   clipped text, dead time, fallback fonts, tiny elements, black frames. Re-render the sheet.
+3. `ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height,r_frame_rate -of json artifacts/motion/mayall-reel.mp4`
+   → must report 1920x1080, 24/1 fps, ~26 s, non-trivial size. Quote the real output.
+4. Extract 3 frames from the FINAL mp4 at different times (`ffmpeg -ss T -i ... -frames:v 1`) and READ
+   them to confirm they are not black and that the text is legible.
+5. `docs/motion/scene.html` must expose `window.renderAt(t)` — verify by grepping.
+
+Work autonomously. Do not ask questions. Do not stop early. Finish with a short report: the storyboard
+as built, the final MP4 path, the real ffprobe numbers, the style rules you used, and the two
+weakest moments with how you would fix them.

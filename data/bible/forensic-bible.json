@@ -1,0 +1,3286 @@
+{
+ "00 Architecture Overview": [
+  [
+   "ChainSentinel — Detection Pipeline Architecture (Single Chain ETH)",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "⚠ AVAILABILITY DISCLAIMER: Not all clients will provide all raw logs. call_traces_raw requires archive node or Foundry simulation — unavailable from standard RPC. mempool_observations requires mempool subscription — unavailable post-confirmation. token_transfers requires ERC20 contract ABI. Detection degrades gracefully: affected signals are marked UNAVAILABLE when source logs are missing.",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "⚠ ABI NORMALIZATION DEPENDENCY: Event decoding requires client-provided ABI. Without ABI, events remain as raw topic0 hashes and ABI-DEPENDENT signals cannot fire. Normalization pipeline: Client ABI → signature_db.json → decoded event names + function selectors. Fallback: OpenChain API lookup for unknown selectors.",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Layer",
+   "Name",
+   "Input",
+   "Output",
+   "Purpose",
+   "Scripts / Components Needed"
+  ],
+  [
+   "Layer 0\nRaw Ingestion",
+   "Raw Logs Catalog",
+   "Ethereum node / archive node / Foundry simulation\nClient-provided exports",
+   "8 raw NDJSON files:\nblock_headers, transactions_raw, transaction_receipts,\nevent_logs_raw, call_traces_raw, balance_diffs,\nstorage_diffs, state_diffs\n+ Optional: mempool_observations, token_transfers",
+   "Collect all on-chain evidence at lowest level.\nPreserve chain of custody with ingestion timestamp hash.",
+   "node_connector.py\nfoundry_exporter.py\nraw_ingest_validator.py"
+  ],
+  [
+   "Layer 0.5\nABI Normalization",
+   "ABI / Signature Resolution",
+   "Raw event logs (topic0 hashes)\nClient ABI files (.json)\nOpenChain API (fallback)",
+   "signature_db.json\nDecoded event names\nDecoded function selectors\nHuman-readable enriched logs",
+   "Transform hex topic0 and function selectors into\nhuman-readable names using client ABI.\nCritical: without this, event-based signals are blind.",
+   "abi_extractor.py (compile client contracts)\ndecode_logs.py (apply signature_db)\nOpenChain fallback lookup"
+  ],
+  [
+   "Layer 1\nDerived Logs",
+   "Derived Logs Engine",
+   "All 8+ raw log files\nDecoded event names from Layer 0.5",
+   "36 derived NDJSON files\n(15 existing + 21 new)\nSee Sheet 02 for full catalog",
+   "Transform raw evidence into forensically meaningful\nfacts. Each derived log answers one specific question\nabout what happened in the chain.",
+   "derive_logs.py (existing — extend)\nnew derived modules per Sheet 08 build order"
+  ],
+  [
+   "Layer 2\nDetection Signals",
+   "Signal Computation Engine",
+   "36 derived log files\nHistorical baselines (Layer 2 memory)",
+   "54 detection signals per transaction\nEach signal: fired/not-fired + confidence weight\nSee Sheet 03 for full signal catalog",
+   "Evaluate each derived fact against detection rules.\nEach signal is atomic — one thing, one condition.\nSignals are stateless per transaction except Behavioural.",
+   "signal_engine.py\nbaseline_calculator.py\nsignal_registry.json"
+  ],
+  [
+   "Layer 3\nAttack Correlation",
+   "Attack Pattern Correlator",
+   "54 signals with confidence weights\nAttack pattern definitions (Sheet 04)\nSignal-to-attack mapping (Sheet 05)",
+   "Attack detection records:\nattack type + confidence score +\nevidence bundle + actor + value at risk",
+   "Combine signals to confirm attack patterns.\nMinimum weight threshold per attack type.\nOutputs structured forensic detection record.",
+   "attack_correlator.py\nconfidence_scorer.py\nevidence_bundler.py"
+  ],
+  [
+   "Layer 4\nGraph Attribution",
+   "Fund Tracing + Attribution Engine",
+   "value_flow_graph derived log\nfund_hop_chains derived log\nattack detection records from Layer 3\nKnown address registry (Sheet 09)",
+   "Attribution records:\nattacker identity cluster +\nfund flow path + mixer/bridge flags +\ncross-address links",
+   "Answer WHO and WHERE after attack confirmed.\nBFS traversal from attacker address.\nAddress clustering by behavioral patterns.",
+   "graph_engine.py\nbfs_tracer.py\naddress_clusterer.py"
+  ],
+  [
+   "Layer 5\nOutput",
+   "Alert + Report Generator",
+   "Attack detection records\nAttribution records\nCase management state",
+   "Real-time alerts (webhook/Slack)\nForensic incident reports\nEvidence bundles for legal\nKibana dashboard events",
+   "Deliver findings to humans and downstream systems.\nEvery finding traceable to raw evidence.\nChain of custody preserved end-to-end.",
+   "alert_dispatcher.py\nreport_generator.py\nes_ingest.py (existing — extend)"
+  ],
+  [
+   "ATTACK FAMILY COLOR LEGEND — Used consistently across all sheets",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "  Reentrancy",
+   "  Flash Loan",
+   "  Oracle Manipulation",
+   "  Access Control",
+   "",
+   ""
+  ],
+  [
+   "  MEV / Sandwich",
+   "  Rug Pull",
+   "  Token Mechanism",
+   "  Graph / Attribution",
+   "",
+   ""
+  ]
+ ],
+ "01 Raw Logs Catalog": [
+  [
+   "ChainSentinel — Raw Logs Catalog",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "⚠ AVAILABILITY DISCLAIMER: Not all clients will provide all raw logs. call_traces_raw requires archive node or Foundry simulation — unavailable from standard RPC. mempool_observations requires mempool subscription — unavailable post-confirmation. token_transfers requires ERC20 contract ABI. Detection degrades gracefully: affected signals are marked UNAVAILABLE when source logs are missing.",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Raw Log Name",
+   "Availability",
+   "What It Contains",
+   "Key Fields",
+   "Limitations",
+   "Which Derived Logs Need It"
+  ],
+  [
+   "block_headers",
+   "Always Available",
+   "One record per block. Metadata about each mined block.",
+   "block_number, block_hash, parent_hash, timestamp, miner, gas_limit, gas_used, tx_count",
+   "No transaction detail. No state info. Timestamp only accurate to ~12 seconds.",
+   "contract_deployments, contract_interactions, gas_analysis_per_block,\nenriched_block_summary, transaction_timeline, deployment_to_attack,\nblock_address_activity"
+  ],
+  [
+   "transactions_raw",
+   "Always Available",
+   "One record per transaction. The call parameters as submitted to the network.",
+   "tx_hash, block_number, from, to, value, input (calldata), gas, gas_price, nonce, tx_index",
+   "Input is raw hex — requires ABI to decode function name and params.\nNo execution result here.",
+   "contract_deployments, contract_interactions, gas_analysis_per_tx,\nfailed_transactions, transaction_timeline, value_flow_graph,\nnonce_tracking, address_first_contact, deployment_to_attack,\nblock_address_activity, contract_creator_graph"
+  ],
+  [
+   "transaction_receipts",
+   "Always Available",
+   "One record per transaction. The result after EVM execution.",
+   "tx_hash, block_number, status (0/1), gas_used, logs_count, contract_address (if deploy)",
+   "Only pass/fail status. No detail on WHY a tx failed.\nNo internal call info.",
+   "failed_transactions, gas_analysis_per_tx, contract_deployments,\nfailed_attempt_history, address_activity_summary"
+  ],
+  [
+   "event_logs_raw",
+   "Always Available",
+   "One record per event emitted. Raw topic hashes and hex data.",
+   "tx_hash, block_number, log_index, address (contract), topic_0, topics[1-3], data",
+   "All values are raw hex until ABI normalization runs.\ntopic_0 is keccak of event signature — unreadable without ABI.\nABI-DEPENDENT signals cannot fire without this decoded.",
+   "enriched_event_logs, event_sequence, token_transfer_graph,\napproval_registry, governance_actions, liquidation_events,\npermit_usage_log, price_reads, share_price_history"
+  ],
+  [
+   "call_traces_raw",
+   "⚠ Requires Archive Node or Foundry",
+   "Full EVM execution tree per transaction. Every internal call recursively captured.",
+   "tx_hash, trace tree: {from, to, type, value, input, output, gas, gasUsed, depth, calls[], error}",
+   "NOT available from standard Ethereum RPC (eth_getTransactionByHash).\nRequires debug_traceTransaction (archive node) or Foundry simulation.\nLargest raw file — can be 10-100x size of other files.\nAbsent = all structural heuristic signals UNAVAILABLE.",
+   "execution_structure, internal_calls, reentrancy_patterns,\nvalue_flow_intra_tx, failed_internals, price_reads,\nvalue_flow_graph (internal edges), fund_hop_chains"
+  ],
+  [
+   "balance_diffs",
+   "Usually Available",
+   "ETH balance before and after for every address touched in every transaction.",
+   "tx_hash, block_number, address, balance_before, balance_after, balance_delta, balance_delta_eth",
+   "Derived from state — some node configurations do not expose this directly.\nMay require manual computation from state_diffs.",
+   "eth_transfers, value_flow_intra_tx, value_flow_graph,\nbalance_spike_registry, address_activity_summary,\nfund_hop_chains, donation_tracker"
+  ],
+  [
+   "storage_diffs",
+   "Usually Available",
+   "Every storage slot that changed value in every transaction.",
+   "tx_hash, block_number, contract, slot, value_before, value_after",
+   "Slot addresses are raw hex — requires ABI or known slot layout to interpret.\nOwner slot, balance mapping slot must be pre-identified per contract.",
+   "storage_mutations, state_delta_per_tx, share_price_history"
+  ],
+  [
+   "state_diffs",
+   "Usually Available",
+   "High-level state changes — nonce, ETH balance, code changes per address.",
+   "tx_hash, block_number, address, pre: {nonce, balance, code}, post: {nonce, balance, code}",
+   "Less granular than storage_diffs. No slot-level detail.",
+   "nonce_tracking, contract_creator_graph, address_activity_summary"
+  ],
+  [
+   "mempool_observations",
+   "⚠ Optional — Requires Mempool Subscription",
+   "Pending transactions seen in mempool before block confirmation. Enables pre-confirmation detection.",
+   "tx_hash (pending), from, to, value, input, gas_price, first_seen_timestamp",
+   "NOT available post-confirmation — must be captured in real time.\nNo guarantee pending tx will be included in next block.\nPrivate mempools (Flashbots) not visible.\nAbsent = frontrunning and sandwich PREDICTION unavailable (detection still works post-block).",
+   "block_address_activity (pre-confirmation layer)\nfailed_attempt_history (probe detection)"
+  ],
+  [
+   "token_transfers",
+   "⚠ Optional — Requires ERC20 ABI",
+   "All ERC20 Transfer events extracted and decoded. ETH-equivalent view of token flows.",
+   "tx_hash, block_number, token_contract, from, to, amount, token_symbol (if known)",
+   "Requires ERC20 ABI — specifically Transfer(address,address,uint256) signature.\nDoes not cover fee-on-transfer deductions automatically.\nAbsent = token-based attack signals (mint_to_dump, approval drain) weakened.",
+   "token_transfer_graph, approval_registry, mint_to_dump detection,\ninfinite_approval_drain signals"
+  ]
+ ],
+ "02 Derived Logs": [
+  [
+   "ChainSentinel — Derived Logs Specification (36 Logs)",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "⚠ DATA AVAILABILITY: Not all clients provide all raw logs. call_traces_raw requires archive node. mempool_observations requires mempool subscription — unavailable post-confirmation. Detection degrades gracefully — affected signals marked UNAVAILABLE. ⚠ ABI NORMALISATION: Event decoding requires client ABI. Without ABI events remain raw hex. ABI-DEPENDENT signals require decoded event names. Fallback: OpenChain API.",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Log Name",
+   "Build Priority",
+   "What It Is",
+   "Raw Inputs",
+   "Key Output Fields",
+   "Signals It Feeds"
+  ],
+  [
+   "contract_deployments",
+   "High",
+   "Every tx where 'to' is null — new contract created. Records deployer, address, bytecode size, outcome.",
+   "transactions_raw\ntransaction_receipts\nblock_headers",
+   "tx_hash, deployer, contract_address, block_number, timestamp, gas_used, bytecode_size_bytes, status",
+   "contract_deployed_before_attack\naddress_funded_before_attack\ncontract_creator_linked"
+  ],
+  [
+   "contract_interactions",
+   "High",
+   "Every tx calling an existing contract. Caller, target, ETH value, decoded function name, outcome.",
+   "transactions_raw\ntransaction_receipts\nblock_headers",
+   "tx_hash, from, to, value_eth, func_selector, func_name, gas_used, status, block_number",
+   "new_address_first_interaction\nhigh_gas_anomaly\nfailed_attempts_before_success"
+  ],
+  [
+   "gas_analysis_per_block",
+   "Low",
+   "Aggregated gas statistics per block — utilisation, average per tx, total burned.",
+   "block_headers\ntransaction_receipts",
+   "block_number, timestamp, gas_limit, gas_used, utilisation_pct, tx_count, avg_gas_per_tx",
+   "high_gas_anomaly (block context)"
+  ],
+  [
+   "gas_analysis_per_tx",
+   "Medium",
+   "Per-transaction gas breakdown — limit, used, price, total fee ETH.",
+   "transactions_raw\ntransaction_receipts",
+   "tx_hash, block_number, from, to, gas_limit, gas_used, gas_price_gwei, fee_eth, status",
+   "high_gas_anomaly"
+  ],
+  [
+   "eth_transfers",
+   "High",
+   "All ETH balance changes. Directional — inflow or outflow — with before/after in ETH.",
+   "balance_diffs",
+   "tx_hash, block_number, address, balance_before_eth, balance_after_eth, delta_eth, direction",
+   "drain_ratio_exceeded\nlarge_value_inflow_spike\nvalue_dispersion\nvalue_concentration"
+  ],
+  [
+   "failed_transactions",
+   "High",
+   "All txs with receipt status=0. Caller, target, value, gas burned, decoded function name.",
+   "transaction_receipts\ntransactions_raw\nblock_headers",
+   "tx_hash, block_number, timestamp, from, to, value_eth, gas_used, func_name",
+   "failed_attempts_before_success"
+  ],
+  [
+   "enriched_event_logs",
+   "High",
+   "Raw event logs joined with tx and block context. Decoded event name and parameters via ABI. ⚠ ABI-DEPENDENT.",
+   "event_logs_raw\ntransactions_raw\nblock_headers",
+   "tx_hash, block_number, log_index, contract, event_name, params (decoded), tx_from, tx_to, tx_value",
+   "event_order_violation\ndeposit_withdraw_same_tx\nduplicate_event_emission\nmissing_expected_event"
+  ],
+  [
+   "internal_calls",
+   "High",
+   "Every sub-call flattened from call traces — depth, call type (CALL/DELEGATECALL/STATICCALL), value, gas, error.",
+   "call_traces_raw",
+   "tx_hash, depth, call_type, from, to, value_eth, gas, gas_used, has_error, parent_type",
+   "delegatecall_storage_write\nselfdestruct_detected\nhook_callback_detected"
+  ],
+  [
+   "reentrancy_patterns",
+   "High",
+   "Baseline heuristic: address at multiple call depths with spread ≥1. Expanded by execution_structure.",
+   "call_traces_raw\ntransactions_raw\nblock_headers",
+   "tx_hash, target_address, call_count, min_depth, max_depth, depth_spread, depths[], block_number",
+   "recursive_depth_pattern (baseline)"
+  ],
+  [
+   "address_activity_summary",
+   "High",
+   "Aggregate per-address stats — txs sent/received, total gas, ETH in/out, unique peers, block range.",
+   "transactions_raw\ntransaction_receipts\nbalance_diffs\nevent_logs_raw",
+   "address, tx_sent, tx_received, contracts_deployed, total_gas_spent, eth_inflow, eth_outflow, first_block, last_block, unique_peers",
+   "address_funded_before_attack\nnonce_gap_detected\naddress_cluster_identified"
+  ],
+  [
+   "enriched_block_summary",
+   "Low",
+   "Per-block summary — header joined with tx list, deployment flags, gas utilisation.",
+   "block_headers\ntransactions_raw\ntransaction_receipts",
+   "block_number, timestamp, miner, gas_utilisation, tx_count, has_deployments, deployers[]",
+   "Block-level clustering context"
+  ],
+  [
+   "storage_mutations",
+   "High",
+   "Every storage slot change per contract per tx — slot, before, after, whether new slot.",
+   "storage_diffs\ntransactions_raw\nblock_headers",
+   "tx_hash, block_number, contract, slot_hex, value_before, value_after, is_new_slot, tx_from",
+   "proxy_implementation_change\ninitialize_on_live_contract\nownership_transfer_then_drain"
+  ],
+  [
+   "transaction_timeline",
+   "High",
+   "All txs sorted chronologically by block+tx_index. Unified view — type, value, status, event count.",
+   "transactions_raw\ntransaction_receipts\nblock_headers\nevent_logs_raw\nbalance_diffs",
+   "tx_hash, block_number, tx_index, timestamp, from, to, type, value_eth, status, events_count, balance_changes",
+   "twap_drift_detected\nliquidation_cascade_trigger\nmulti-block sequence signals"
+  ],
+  [
+   "value_flow_graph",
+   "High",
+   "Directed edges from→to with ETH value for external txs and internal calls. Bidirectional.",
+   "transactions_raw\ncall_traces_raw\nblock_headers",
+   "tx_hash, block_number, from, to, value_eth, edge_type, timestamp",
+   "fund_dispersion_post_attack\nmixer_interaction_detected\nmulti_hop_fund_trail"
+  ],
+  [
+   "nonce_tracking",
+   "Medium",
+   "Nonce before and after per address per tx. Detects gaps and fresh wallet patterns.",
+   "state_diffs",
+   "tx_hash, block_number, address, nonce_before, nonce_after, nonce_delta",
+   "nonce_gap_detected\nnew_address_first_interaction"
+  ],
+  [
+   "execution_structure",
+   "High — Critical",
+   "Fully flattened call tree per tx: address, depth, decoded function name, value at depth, call type, error. Structural backbone of all heuristic detection.",
+   "call_traces_raw",
+   "tx_hash, depth, address, func_selector, func_name, call_type, value_eth, gas_used, has_error, parent_address, parent_depth",
+   "recursive_depth_pattern\ncross_function_reentry\nvalue_drain_per_depth\nhook_callback_detected\nflashloan_bracket_detected\nselfdestruct_detected\ndelegatecall_storage_write"
+  ],
+  [
+   "value_flow_intra_tx",
+   "High — Critical",
+   "ETH flow by each internal call within single tx. Net per address, drain ratio per contract, bracket detection.",
+   "call_traces_raw\nbalance_diffs",
+   "tx_hash, address, total_in_eth, total_out_eth, net_eth, drain_ratio, max_single_hop_eth, bracket_detected",
+   "value_drain_per_depth\ndrain_ratio_exceeded\nflashloan_bracket_detected\nliquidity_removal_spike\nnet_negative_contract_balance"
+  ],
+  [
+   "state_delta_per_tx",
+   "High — Critical",
+   "Before/after snapshot of critical storage slots per tx — balance mappings, owner slots, implementation slots. Was state updated before or after external call?",
+   "storage_diffs\nstate_diffs",
+   "tx_hash, contract, slot_type, value_before, value_after, updated_before_call (bool), updated_after_call (bool)",
+   "storage_update_delay\nownership_transfer_then_drain\nproxy_implementation_change\ninitialize_on_live_contract"
+  ],
+  [
+   "event_sequence",
+   "High — Critical",
+   "Ordered decoded events within single tx by log_index. Strict event ordering analysis. ⚠ ABI-DEPENDENT.",
+   "event_logs_raw",
+   "tx_hash, log_index, contract, event_name, params (decoded), position_in_tx",
+   "event_order_violation\ndeposit_withdraw_same_tx\nduplicate_event_emission\nmissing_expected_event\nevent_parameter_mismatch\nownership_transfer_then_drain"
+  ],
+  [
+   "failed_internals",
+   "High",
+   "Internal sub-calls that reverted within successful tx. Often reconnaissance or failed re-entry attempts.",
+   "call_traces_raw\ntransaction_receipts",
+   "tx_hash, depth, from, to, func_selector, func_name, revert_reason, gas_used",
+   "failed_attempts_before_success\nselfdestruct_detected (no-event path)"
+  ],
+  [
+   "price_reads",
+   "High",
+   "Every call to a price/oracle function per tx — getPrice, getSpotPrice, getReserves, latestAnswer. Caller, oracle, return value, depth. ⚠ ABI-DEPENDENT.",
+   "call_traces_raw\nevent_logs_raw",
+   "tx_hash, block_number, oracle_contract, func_name, caller, return_value, call_depth, timestamp",
+   "price_read_during_callback\nspot_price_manipulation\nreserve_ratio_spike\ntwap_drift_detected\nmulti_oracle_divergence"
+  ],
+  [
+   "address_first_contact",
+   "High",
+   "First time each address interacted with each contract — block, tx hash, function name.",
+   "transactions_raw\nblock_headers",
+   "address, contract, first_block, first_tx_hash, first_func_name",
+   "new_address_first_interaction\naddress_funded_before_attack"
+  ],
+  [
+   "deployment_to_attack",
+   "High",
+   "Block delta between contract deployment and first interaction with target. Flags suspiciously fast post-deployment attacks.",
+   "transactions_raw\ntransaction_receipts\nblock_headers",
+   "deploy_tx_hash, contract_address, deployer, deploy_block, target_contract, first_interaction_block, blocks_delta",
+   "contract_deployed_before_attack"
+  ],
+  [
+   "block_address_activity",
+   "High",
+   "All addresses active per block grouped by contracts touched. Exposes tx ordering within blocks.",
+   "transactions_raw\nblock_headers\nevent_logs_raw",
+   "block_number, address, contracts_touched[], tx_positions[], gas_prices[], is_first_in_block, is_last_in_block",
+   "sandwich ordering\nfrontrunning\ntwap_drift_detected"
+  ],
+  [
+   "failed_attempt_history",
+   "High",
+   "Historical failed txs per address against specific targets — functions attempted, gas burned.",
+   "transaction_receipts\ntransactions_raw",
+   "address, target_contract, fail_count, fail_blocks[], func_names_attempted[], total_gas_burned",
+   "failed_attempts_before_success"
+  ],
+  [
+   "address_interaction_graph",
+   "Medium",
+   "Directed graph of who called whom, weighted by frequency and total ETH. First/last block per edge.",
+   "transactions_raw\ncall_traces_raw\nblock_headers",
+   "from_address, to_address, call_count, total_value_eth, first_block, last_block, edge_type",
+   "address_cluster_identified\ncross_contract_collusion"
+  ],
+  [
+   "fund_hop_chains",
+   "High",
+   "Multi-hop ETH paths from starting address using BFS. Chains A→B→C→D with hop count, amounts, timing.",
+   "balance_diffs\ntransactions_raw\nblock_headers",
+   "origin_address, hop_index, address, received_eth, forwarded_eth, block_number, blocks_since_prev_hop, path_id",
+   "fund_dispersion_post_attack\nmixer_interaction_detected\nbridge_interaction_detected\nmulti_hop_fund_trail"
+  ],
+  [
+   "contract_creator_graph",
+   "High",
+   "Deployer EOA → all contracts deployed. Links attacker wallets to exploit contracts.",
+   "transactions_raw\ntransaction_receipts\nstate_diffs",
+   "deployer_address, deployed_contract, deploy_block, deploy_tx_hash, bytecode_hash, contracts_by_same_deployer[]",
+   "contract_creator_linked\ncross_contract_collusion\naddress_cluster_identified"
+  ],
+  [
+   "balance_spike_registry",
+   "High",
+   "Addresses receiving anomalous ETH inflows >10x their 30-block rolling average.",
+   "balance_diffs\naddress_activity_summary",
+   "address, spike_block, spike_tx_hash, received_eth, historical_avg_eth, spike_ratio",
+   "fund_dispersion_post_attack\nlarge_value_inflow_spike"
+  ],
+  [
+   "token_transfer_graph",
+   "Medium",
+   "ERC20 token flows from Transfer events. Token drains, dumps, approval exploits. ⚠ ABI-DEPENDENT.",
+   "token_transfers (preferred)\nor event_logs_raw + token ABI",
+   "tx_hash, block_number, token_contract, token_symbol, from, to, amount_raw, amount_decimal",
+   "mint_to_dump_ratio\npermit_signature_abuse"
+  ],
+  [
+   "approval_registry",
+   "High",
+   "All ERC20 Approval events — spender, owner, amount, whether infinite (max uint256). ⚠ ABI-DEPENDENT.",
+   "event_logs_raw",
+   "tx_hash, block_number, token_contract, owner, spender, amount, is_infinite (bool)",
+   "infinite_approval_drain\npermit_signature_abuse"
+  ],
+  [
+   "governance_actions",
+   "Medium",
+   "All governance events — ProposalCreated, VoteCast, ProposalExecuted, Canceled. ⚠ ABI-DEPENDENT.",
+   "event_logs_raw",
+   "tx_hash, block_number, governance_contract, action_type, proposal_id, proposer, vote_weight, executed_block",
+   "governance_vote_manipulation"
+  ],
+  [
+   "liquidation_events",
+   "Medium",
+   "All liquidation events from lending protocols. ⚠ ABI-DEPENDENT.",
+   "event_logs_raw",
+   "tx_hash, block_number, protocol_contract, liquidator, borrower, collateral_seized_eth, debt_repaid_eth",
+   "liquidation_cascade_trigger"
+  ],
+  [
+   "permit_usage_log",
+   "Medium",
+   "All EIP-2612 permit() calls — off-chain signature sets approval. ⚠ ABI-DEPENDENT.",
+   "call_traces_raw\nevent_logs_raw",
+   "tx_hash, block_number, token_contract, owner, spender, value, deadline, signature_v_r_s",
+   "permit_signature_abuse\neip712_replay_detected"
+  ],
+  [
+   "donation_tracker",
+   "Medium",
+   "Direct ETH sends to contracts with empty calldata. Used in inflation attacks.",
+   "call_traces_raw\ntransactions_raw",
+   "tx_hash, block_number, sender, recipient_contract, value_eth, input_empty (bool)",
+   "donation_inflation_attack\nshare_price_manipulation"
+  ],
+  [
+   "share_price_history",
+   "Medium",
+   "ERC4626 vault share price (totalAssets/totalSupply) per block.",
+   "event_logs_raw\nbalance_diffs\nstorage_diffs",
+   "block_number, vault_contract, total_assets_eth, total_supply, share_price, pct_change_from_prev_block",
+   "vault_inflation_attack\nshare_price_manipulation"
+  ]
+ ],
+ "03 Detection Signals": [
+  [
+   "ChainSentinel — Detection Signals Reference (54 Signals)",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "⚠ ABI NORMALIZATION DEPENDENCY: Event decoding requires client-provided ABI. Without ABI, events remain as raw topic0 hashes and ABI-DEPENDENT signals cannot fire. Normalization pipeline: Client ABI → signature_db.json → decoded event names + function selectors. Fallback: OpenChain API lookup for unknown selectors.",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Family",
+   "Signal Name",
+   "What It Detects",
+   "Threshold / Logic",
+   "Derived Logs Needed",
+   "Prerequisite Signal",
+   "Attack Patterns Fed",
+   "Confidence Weight"
+  ],
+  [
+   "Structural",
+   "recursive_depth_pattern",
+   "Same contract address appears at call depth N and N+2 or deeper in same tx. Core geometric fingerprint of reentrancy.",
+   "call_count > 1 AND depth_spread >= 2 AND same to_address at min 2 depths",
+   "execution_structure",
+   "None — fires independently",
+   "Classic Reentrancy, Cross-Function Reentrancy, ERC777 Hook",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "cross_function_reentry",
+   "Same victim contract at multiple depths but different function selectors each time. Deposit inside withdraw.",
+   "same to_address at depth N and N+2 AND func_selector differs between appearances",
+   "execution_structure\nstate_delta_per_tx",
+   "recursive_depth_pattern must fire first",
+   "Cross-Function Reentrancy",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "value_drain_per_depth",
+   "ETH flows OUT from victim at each reentrancy depth. Confirms actual extraction not just logic execution.",
+   "value_eth > 0 at each depth where same address re-appears",
+   "execution_structure\nvalue_flow_intra_tx",
+   "recursive_depth_pattern must fire first",
+   "Classic Reentrancy, ERC777 Hook",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "storage_update_delay",
+   "Contract balance mapping NOT updated between successive calls in same tx. The fundamental reentrancy bug.",
+   "state_delta_per_tx.updated_between_calls = false for balance slot",
+   "state_delta_per_tx\nexecution_structure",
+   "recursive_depth_pattern must fire first",
+   "All Reentrancy variants",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "hook_callback_detected",
+   "tokensReceived() or equivalent called before initiating transfer completes. ERC777 reentrancy entry.",
+   "func_selector matches tokensReceived AND call_depth > depth of initiating transfer",
+   "execution_structure\nevent_sequence",
+   "None — fires independently",
+   "ERC777 Hook Reentrancy",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "delegatecall_storage_write",
+   "DELEGATECALL made and storage slots in CALLING contract modified. Proxy hijack mechanism.",
+   "internal_calls.type = DELEGATECALL AND storage_mutations.contract = calling_contract",
+   "execution_structure\nstate_delta_per_tx",
+   "None — fires independently",
+   "Delegatecall Privilege Escalation, Uninitialized Proxy",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "proxy_implementation_change",
+   "EIP-1967 implementation slot of proxy contract changed within tx.",
+   "storage_mutations.slot = 0x360894...implementation_slot AND value_before != value_after",
+   "storage_mutations\nstate_delta_per_tx",
+   "None — fires independently",
+   "Uninitialized Proxy, Delegatecall Escalation",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "selfdestruct_detected",
+   "SELFDESTRUCT opcode executed. Contract balance forced to zero with no event.",
+   "internal_calls.type = SELFDESTRUCT OR execution_structure error contains selfdestruct",
+   "execution_structure\nfailed_internals",
+   "None — fires independently",
+   "Selfdestruct Drain",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "flashloan_bracket_detected",
+   "Large value out at depth 0, operations at depth 1+, equivalent value returns by tx end. Borrow-use-repay bracket.",
+   "value_flow_intra_tx: large outflow depth 0 AND net_eth >= 0 at tx end AND multiple contract calls at depth 1+",
+   "execution_structure\nvalue_flow_intra_tx\nevent_sequence",
+   "large_value_inflow_spike recommended as supporting",
+   "All Flash Loan variants",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "initialize_on_live_contract",
+   "initialize() called on contract with existing non-zero state.",
+   "func_selector = initialize() AND state_delta_per_tx.value_before != 0 for admin slot",
+   "execution_structure\nstate_delta_per_tx",
+   "None — fires independently",
+   "Uninitialized Proxy Exploit",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "Value",
+   "large_value_inflow_spike",
+   "Contract/address receives ETH >10x 30-block rolling average inflow in single tx.",
+   "inflow_eth > (30_block_avg_inflow * 10)",
+   "value_flow_intra_tx\neth_transfers\nbalance_spike_registry",
+   "None — fires independently",
+   "Flash Loan, Collateral Deposit Pre-exploit",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "drain_ratio_exceeded",
+   "Value out of contract > 80% of contract balance in single tx. Core fund-drain signal.",
+   "total_out_eth / contract_balance_before > 0.80",
+   "value_flow_intra_tx\neth_transfers",
+   "None — fires independently",
+   "All fund-draining attacks",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "value_concentration",
+   "Multiple addresses send ETH into single address within short block window. Many-to-one accumulation.",
+   "distinct_senders >= 3 AND all send to same address within 10 blocks",
+   "value_flow_graph\nfund_hop_chains\neth_transfers",
+   "None — fires independently",
+   "Fund consolidation, Pre-attack staging",
+   "Weight 1 — Weak"
+  ],
+  [
+   "",
+   "value_dispersion",
+   "Single address sends ETH to N fresh addresses within short window. Post-attack fund splitting.",
+   "distinct_recipients >= 3 AND recipients.is_fresh_wallet = true within 50 blocks",
+   "value_flow_graph\nfund_hop_chains\nbalance_spike_registry",
+   "drain_ratio_exceeded or confirmed attack recommended",
+   "Fund Dispersion Post Attack",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "net_negative_contract_balance",
+   "Contract ETH balance after tx lower than before with no corresponding Withdrawn event.",
+   "balance_after < balance_before AND Withdrawn event NOT in event_sequence",
+   "value_flow_intra_tx\nevent_sequence\neth_transfers",
+   "drain_ratio_exceeded should also fire",
+   "Selfdestruct Drain, Silent Drain",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "mint_to_dump_ratio",
+   "Token mint > 20% of supply AND minter dumps on DEX in same or next tx.",
+   "mint_amount / total_supply_before > 0.20 AND swap tx from same address within 2 blocks",
+   "event_sequence\nvalue_flow_intra_tx\ntoken_transfer_graph",
+   "None — fires independently",
+   "Mint and Dump",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "liquidity_removal_spike",
+   "Liquidity removal >80% of pool reserves in single tx.",
+   "lp_tokens_burned / total_lp_supply > 0.80",
+   "value_flow_intra_tx\nevent_sequence\neth_transfers",
+   "None — fires independently",
+   "Liquidity Rug",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "vault_share_price_spike",
+   "ERC4626 vault share price increases abnormally in single tx — inflation attack signature.",
+   "share_price_delta_pct > 500% in single tx",
+   "share_price_history\nvalue_flow_intra_tx",
+   "",
+   "Vault Inflation Attack, Donation Attack",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "Sequence",
+   "deposit_withdraw_same_tx",
+   "Both Deposit and Withdraw events emitted for same address in same tx.",
+   "event_sequence contains Deposited AND Withdrawn for same user param in same tx_hash",
+   "event_sequence\nenriched_event_logs",
+   "recursive_depth_pattern should also fire for reentrancy",
+   "Classic Reentrancy, Cross-Function Reentrancy",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "event_order_violation",
+   "Events in order that violates contract logic. Withdrawn before Deposited. Transfer before Approval.",
+   "event_sequence: Withdrawn.log_index < Deposited.log_index for same user",
+   "event_sequence\nenriched_event_logs",
+   "None — fires independently",
+   "Reentrancy, Ownership Hijack, Governance Attack",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "duplicate_event_emission",
+   "Same event signature emitted >1x from same contract for same user in same tx.",
+   "COUNT(event_name, contract, user_param) > 1 within same tx_hash",
+   "event_sequence\nenriched_event_logs",
+   "recursive_depth_pattern must fire first for reentrancy",
+   "Classic Reentrancy, ERC777 Hook",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "missing_expected_event",
+   "State changed (confirmed by storage_diff) but expected event NOT emitted.",
+   "storage_mutations shows balance slot change AND no corresponding Transfer/Withdrawn event",
+   "event_sequence\nstate_delta_per_tx\nenriched_event_logs",
+   "State change confirmed via state_delta_per_tx required",
+   "Silent Drain, Selfdestruct, Exploit bypass",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "event_parameter_mismatch",
+   "Amount in emitted event differs from actual ETH change in state diff.",
+   "ABS(decoded_event.amount - balance_delta_eth) > threshold (0.001 ETH)",
+   "event_sequence\nstate_delta_per_tx\nvalue_flow_intra_tx",
+   "None — fires independently",
+   "Reentrancy amount manipulation",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "ownership_transfer_then_drain",
+   "OwnershipTransferred event AND large ETH drain in same tx with zero blocks between.",
+   "OwnershipTransferred in event_sequence AND drain_ratio_exceeded in same tx_hash",
+   "event_sequence\nstate_delta_per_tx\nvalue_flow_intra_tx",
+   "drain_ratio_exceeded must also fire",
+   "Ownership Hijack + Drain",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "governance_instant_execution",
+   "Governance proposal created AND executed in same tx or within 1 block — bypasses voting period.",
+   "ProposalCreated and ProposalExecuted in same tx OR blocks_delta < expected_voting_period",
+   "event_sequence\ngovernance_actions",
+   "",
+   "Flash Loan Governance Attack",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "permit_used_before_owner_approval",
+   "permit() called granting allowance AND transferFrom called in same tx draining tokens.",
+   "permit_usage_log.tx_hash == token_transfer_graph.tx_hash AND same spender",
+   "permit_usage_log\napproval_registry\ntoken_transfer_graph",
+   "",
+   "Permit Signature Abuse",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "Behavioural",
+   "new_address_first_interaction",
+   "Address with nonce < 3 interacting with complex protocol for first time.",
+   "nonce_tracking.nonce_before < 3 AND address_first_contact.first_contact_block = current_block",
+   "address_first_contact\nnonce_tracking\naddress_activity_summary",
+   "None — context signal only, never fires alone",
+   "Attacker wallet identification",
+   "Weight 1 — Weak"
+  ],
+  [
+   "",
+   "contract_deployed_before_attack",
+   "Contract deployed within 10 blocks before attack tx and that contract is attack participant.",
+   "deployment_to_attack.blocks_delta <= 10",
+   "deployment_to_attack\ncontract_creator_graph\nnonce_tracking",
+   "address_funded_before_attack recommended as supporting",
+   "Attacker Contract Deployment Pattern",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "address_funded_before_attack",
+   "Attacker wallet received first ETH within 50 blocks before deploying attack contract.",
+   "address_first_contact.first_contact_block >= (deploy_block - 50) AND prior_balance = 0",
+   "address_first_contact\naddress_activity_summary\nfund_hop_chains",
+   "None — fires independently",
+   "Attacker wallet staging",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "nonce_gap_detected",
+   "Address nonce jumps non-sequentially — missing transaction in public mempool.",
+   "nonce_after - nonce_before > 1 in single block",
+   "nonce_tracking",
+   "None — context signal only",
+   "Private mempool usage, Flashbots",
+   "Weight 1 — Weak"
+  ],
+  [
+   "",
+   "high_gas_anomaly",
+   "Tx consumes >3x statistical average gas for same function selector on same contract.",
+   "gas_used > (func_selector_avg_gas * 3.0) for same contract",
+   "gas_analysis_per_tx\nexecution_structure",
+   "None — context signal only, never fires alone",
+   "Reentrancy, Sandwich, Deep exploit calls",
+   "Weight 1 — Weak"
+  ],
+  [
+   "",
+   "failed_attempts_before_success",
+   "Attacking address had 1+ failed txs against same target within 20 blocks before success.",
+   "failed_attempt_history.fail_count_against_target >= 1 AND fail_block >= (attack_block - 20)",
+   "failed_attempt_history\nfailed_transactions\nfailed_internals",
+   "None — fires independently",
+   "Probe then exploit pattern",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "approval_for_max_amount",
+   "ERC20 Approval for max uint256 granted to previously unknown or newly deployed contract.",
+   "approval_registry.is_max_approval = true AND spender.first_seen_block >= (current_block - 10)",
+   "approval_registry\ncontract_creator_graph",
+   "",
+   "Infinite Approval Drain",
+   "Weight 2 — Strong"
+  ],
+  [
+   "Oracle",
+   "price_read_during_callback",
+   "Price oracle function called while ETH send callback still active in call stack.",
+   "price_reads.call_depth > 0 AND parent call at same depth is ETH transfer",
+   "price_reads\nexecution_structure",
+   "recursive_depth_pattern or flashloan_bracket for full context",
+   "Read-Only Reentrancy, Oracle Manipulation",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "spot_price_manipulation",
+   "AMM spot price deviates >15% from tx-start value within same tx.",
+   "price_reads: ABS(price_after_swap - price_at_tx_start) / price_at_tx_start > 0.15",
+   "price_reads\nvalue_flow_intra_tx",
+   "reserve_ratio_spike should also fire",
+   "AMM Spot Price Manipulation, Flash Loan+Oracle",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "reserve_ratio_spike",
+   "DEX pool reserve ratio changes >20% in single tx or consecutive blocks.",
+   "ABS(reserve_ratio_after - reserve_ratio_before) / reserve_ratio_before > 0.20",
+   "price_reads\nevent_sequence\nvalue_flow_intra_tx",
+   "None — fires independently",
+   "Oracle Manipulation, Sandwich, Liquidation Manip",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "twap_drift_detected",
+   "TWAP deviates from spot by >10% over 10-block rolling window. Sustained directional pressure.",
+   "ABS(twap_10block - spot_price) / spot_price > 0.10",
+   "price_reads\nblock_address_activity\ntransaction_timeline",
+   "reserve_ratio_spike on multiple preceding blocks required",
+   "TWAP Manipulation",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "multi_oracle_divergence",
+   "Two or more oracle sources in same tx return prices diverging >10%.",
+   "COUNT(distinct price_reads.oracle_contract) >= 2 AND price_divergence > 10%",
+   "price_reads\nexecution_structure",
+   "None — fires independently",
+   "Multi-Oracle Inconsistency Exploit",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "price_before_after_mismatch",
+   "Price at block N-1 and N+1 similar but price during attack tx significantly different.",
+   "price_at_block_N-1 ≈ price_at_block_N+1 AND price_during_tx differs by >15%",
+   "price_reads\ntransaction_timeline",
+   "spot_price_manipulation must fire first",
+   "All Oracle Manipulation variants",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "donation_balance_inflation",
+   "Direct ETH send to vault contract (no calldata) causes share price to spike artificially.",
+   "donation_tracker.has_calldata = false AND share_price_history.share_price_delta_pct > 100%",
+   "donation_tracker\nshare_price_history",
+   "",
+   "Donation Attack, Vault Inflation Attack",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "Graph",
+   "fund_dispersion_post_attack",
+   "Within 50 blocks after exploit, attacker sends funds to 3+ fresh addresses.",
+   "value_dispersion fires AND recipients.first_seen_block = current_block within 50 blocks of exploit",
+   "fund_hop_chains\nvalue_flow_graph\nbalance_spike_registry",
+   "Attack already confirmed — fires post-attack",
+   "Fund Dispersion Post Attack",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "mixer_interaction_detected",
+   "Fund hop chain reaches known mixer contract address.",
+   "fund_hop_chains.to_address IN known_mixer_addresses (Sheet 09)",
+   "fund_hop_chains\nvalue_flow_graph\naddress_interaction_graph",
+   "fund_dispersion_post_attack should fire first",
+   "Mixer/Bridge Detection",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "bridge_interaction_detected",
+   "Fund hop chain reaches known cross-chain bridge contract.",
+   "fund_hop_chains.to_address IN known_bridge_addresses (Sheet 09)",
+   "fund_hop_chains\nvalue_flow_graph",
+   "fund_dispersion_post_attack should fire first",
+   "Mixer/Bridge Detection",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "address_cluster_identified",
+   "2+ addresses controlled by same entity — common funder, same deployer, synchronized timing.",
+   "fund_hop_chains common source OR contract_creator_graph same deployer OR tx timing correlation < 2 blocks",
+   "address_interaction_graph\ncontract_creator_graph\nfund_hop_chains\naddress_activity_summary",
+   "contract_deployed_before_attack or address_funded_before_attack as supporting",
+   "Address Clustering, Cross-Contract Collusion",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "contract_creator_linked",
+   "Attack contract and victim-interacting contract share same deployer EOA.",
+   "contract_creator_graph: deployer_address matches across 2+ contracts in same attack",
+   "contract_creator_graph\ndeployment_to_attack",
+   "address_cluster_identified as supporting signal",
+   "Attacker infrastructure confirmation",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "multi_hop_fund_trail",
+   "Stolen funds traceable through 3+ address hops from exploit contract.",
+   "fund_hop_chains.hop_index >= 3 from attack origin address",
+   "fund_hop_chains\nvalue_flow_graph\nbalance_spike_registry",
+   "fund_dispersion_post_attack must fire first",
+   "Fund trail mapping, Prosecution evidence",
+   "Weight 2 — Strong"
+  ],
+  [
+   "Additional",
+   "integer_overflow_detected",
+   "Arithmetic result wraps around uint256 max value — value suddenly near 0 or near max after addition.",
+   "storage_mutations: value_after = 0 or MAX_UINT256 after arithmetic operation",
+   "state_delta_per_tx\nstorage_mutations",
+   "None — fires independently",
+   "Integer Overflow Exploit",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "liquidation_cascade_trigger",
+   "Single price manipulation causes 3+ liquidation events across different borrowers in same or consecutive blocks.",
+   "COUNT(liquidation_events within 5 blocks of price manipulation) >= 3",
+   "liquidation_events\nprice_reads\nblock_address_activity",
+   "spot_price_manipulation must fire first",
+   "Liquidation Cascade, Liquidation Manipulation",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "eip712_replay_detected",
+   "Same EIP-712 signature used more than once or deadline already passed.",
+   "permit_usage_log: duplicate signature hash OR current_block_timestamp > deadline",
+   "permit_usage_log\nevent_sequence",
+   "permit_signature_abuse must fire first",
+   "Signature Replay Attack",
+   "Weight 3 — Hard Evidence"
+  ],
+  [
+   "",
+   "fee_on_transfer_discrepancy",
+   "Amount sent differs from amount received in token transfer — unexpected fee deducted.",
+   "token_transfer_graph: sent_amount != received_amount for same transfer",
+   "token_transfer_graph\nevent_sequence",
+   "",
+   "Fee-on-Transfer Token Exploit",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "rebasing_balance_manipulation",
+   "Token balance changes without Transfer event — rebase mechanism exploited.",
+   "token balance in storage_mutations changes AND no Transfer event in event_sequence",
+   "storage_mutations\nevent_sequence",
+   "",
+   "Rebasing Token Exploit",
+   "Weight 2 — Strong"
+  ],
+  [
+   "",
+   "cross_contract_state_dependency",
+   "Contract A's state read by Contract B in same tx where Contract A's state was modified — stale read window.",
+   "execution_structure: STATICCALL from B to A at depth N after A's storage was written at depth N-1",
+   "execution_structure\nstate_delta_per_tx",
+   "",
+   "Cross-Contract Collusion, Read-Only Reentrancy",
+   "Weight 2 — Strong"
+  ]
+ ],
+ "04 Attack Pattern Catalog": [
+  [
+   "ChainSentinel — Attack Pattern Catalog (37 Attacks, 8 Families)",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "⚠ AVAILABILITY DISCLAIMER: Not all clients will provide all raw logs. call_traces_raw requires archive node or Foundry simulation — unavailable from standard RPC. mempool_observations requires mempool subscription — unavailable post-confirmation. token_transfers requires ERC20 contract ABI. Detection degrades gracefully: affected signals are marked UNAVAILABLE when source logs are missing.",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Family",
+   "Attack Name",
+   "Simple Meaning",
+   "Attack Type",
+   "Min Signals + Confidence Threshold",
+   "Correlated Signals",
+   "Derived Logs",
+   "Raw Foundation",
+   "Real World Example"
+  ],
+  [
+   "Reentrancy",
+   "Classic Reentrancy",
+   "Contract sends ETH before zeroing balance. Attacker re-enters withdraw() repeatedly draining more than deposited.",
+   "Type A\nSingle Tx",
+   "Min 3 signals\nThreshold: ≥7 weight\nrecursive_depth(3)+value_drain(3)+storage_delay(3)",
+   "recursive_depth_pattern\nvalue_drain_per_depth\nstorage_update_delay\ndeposit_withdraw_same_tx",
+   "execution_structure\nvalue_flow_intra_tx\nstate_delta_per_tx\nevent_sequence",
+   "call_traces_raw\nstorage_diffs\nevent_logs_raw\ntransaction_receipts",
+   "The DAO Hack (2016) — $60M ETH drained via recursive withdraw before balance update"
+  ],
+  [
+   "",
+   "Cross-Function Reentrancy",
+   "Attacker calls deposit() inside withdraw() callback, inflating balance before zeroing. Two functions exploited.",
+   "Type A\nSingle Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "cross_function_reentry\nstorage_update_delay\ndeposit_withdraw_same_tx\nevent_order_violation",
+   "execution_structure\nstate_delta_per_tx\nevent_sequence\nvalue_flow_intra_tx",
+   "call_traces_raw\nstorage_diffs\nevent_logs_raw",
+   "Uniswap V1 (2020) — Cross-function reentrancy between token and ETH transfer paths"
+  ],
+  [
+   "",
+   "Read-Only Reentrancy",
+   "No ETH stolen from victim directly. Attacker reads stale state from victim mid-callback and exploits dependent protocol.",
+   "Type A\nSingle Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "price_read_during_callback\nvalue_drain_per_depth\ncross_contract_state_dependency",
+   "execution_structure\nprice_reads\nvalue_flow_intra_tx\nevent_sequence",
+   "call_traces_raw\nevent_logs_raw\nbalance_diffs",
+   "Curve Finance / Conic Finance (2023) — Read-only reentrancy via lpPrice() stale read"
+  ],
+  [
+   "",
+   "ERC777 Hook Reentrancy",
+   "ERC777 tokensReceived() hook fires before transfer completes. Attacker re-enters via hook before balance updated.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥5 weight",
+   "hook_callback_detected\nstorage_update_delay\nrecursive_depth_pattern",
+   "execution_structure\nevent_sequence\nstate_delta_per_tx",
+   "call_traces_raw\nevent_logs_raw\nstorage_diffs",
+   "imBTC Uniswap Pool (2020) — ERC777 hook triggered reentrancy on Uniswap V1"
+  ],
+  [
+   "Flash Loan",
+   "Classic Flash Loan Exploit",
+   "Borrows massive capital zero-collateral in one tx, drains victim, repays by tx end.",
+   "Type A\nSingle Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "flashloan_bracket_detected\nlarge_value_inflow_spike\ndrain_ratio_exceeded",
+   "execution_structure\nvalue_flow_intra_tx\nevent_sequence\nfailed_internals",
+   "call_traces_raw\nevent_logs_raw\nbalance_diffs\ntransaction_receipts",
+   "Euler Finance (2023) — $197M. Flash loan used to create undercollateralized position then self-liquidate"
+  ],
+  [
+   "",
+   "Flash Loan + Oracle Manipulation",
+   "Flash loan funds massive DEX swap to move spot price. Borrows against inflated collateral. Repays loan.",
+   "Type A\nSingle Tx",
+   "Min 4 signals\nThreshold: ≥9 weight",
+   "flashloan_bracket_detected\nspot_price_manipulation\nprice_read_during_callback\ndrain_ratio_exceeded",
+   "execution_structure\nvalue_flow_intra_tx\nprice_reads\nevent_sequence",
+   "call_traces_raw\nevent_logs_raw\nbalance_diffs\nstorage_diffs",
+   "bZx Protocol (2020) — $600K. Flash loan manipulated Kyber price, exploited bZx margin trade"
+  ],
+  [
+   "",
+   "Flash Loan + Governance Attack",
+   "Flash loan acquires governance tokens, passes malicious proposal instantly, drains treasury, returns tokens.",
+   "Type A\nSingle Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "flashloan_bracket_detected\ngovernance_instant_execution\ndrain_ratio_exceeded",
+   "execution_structure\nevent_sequence\nvalue_flow_intra_tx\ngovernance_actions",
+   "call_traces_raw\nevent_logs_raw\nstorage_diffs\nbalance_diffs",
+   "Beanstalk (2022) — $182M. Flash loan acquired supermajority voting power, passed drain proposal"
+  ],
+  [
+   "",
+   "Multi-Pool Chained Flash Loan",
+   "Multiple flash loans from different pools chained to exceed any single pool capacity.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥5 weight",
+   "flashloan_bracket_detected (multiple)\nlarge_value_inflow_spike\nvalue_concentration",
+   "execution_structure\nvalue_flow_intra_tx\nevent_sequence",
+   "call_traces_raw\nevent_logs_raw\nbalance_diffs",
+   "Platypus Finance (2023) — Chained flash loans across multiple pools to amplify attack capital"
+  ],
+  [
+   "Oracle Manipulation",
+   "AMM Spot Price Manipulation",
+   "Large single swap moves AMM spot price. Dependent protocol reads manipulated price. Exploit executed.",
+   "Type A\nSingle Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "spot_price_manipulation\nprice_read_during_callback\nreserve_ratio_spike",
+   "price_reads\nexecution_structure\nvalue_flow_intra_tx\nevent_sequence",
+   "call_traces_raw\nevent_logs_raw\nstorage_diffs\nbalance_diffs",
+   "Mango Markets (2022) — $117M. Spot price of MNGO manipulated to borrow against inflated collateral"
+  ],
+  [
+   "",
+   "TWAP Manipulation",
+   "Repeated swaps across blocks gradually shift TWAP oracle. Exploit uses drifted average price.",
+   "Type B\nMulti Tx",
+   "Min 3 signals\nThreshold: ≥5 weight\n(sequence signals required)",
+   "twap_drift_detected\nreserve_ratio_spike\naddress_funded_before_attack",
+   "price_reads\nblock_address_activity\ntransaction_timeline\ndeployment_to_attack",
+   "call_traces_raw\nevent_logs_raw\ntransactions_raw\nblock_headers",
+   "Inverse Finance (2022) — $15M. TWAP oracle on Uniswap V2 manipulated over multiple blocks"
+  ],
+  [
+   "",
+   "Multi-Oracle Inconsistency Exploit",
+   "Protocol aggregates multiple oracles. Attacker manipulates one while others remain accurate.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥5 weight",
+   "multi_oracle_divergence\nprice_before_after_mismatch\ndrain_ratio_exceeded",
+   "price_reads\nexecution_structure\nvalue_flow_intra_tx",
+   "call_traces_raw\nevent_logs_raw\nbalance_diffs",
+   "Compound (2021) — DAI price spike on Coinbase Pro oracle caused mass liquidations"
+  ],
+  [
+   "Access Control",
+   "Ownership Hijack + Drain",
+   "Ownership transferred and funds drained in same tx. Zero governance, zero timelock.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥6 weight",
+   "ownership_transfer_then_drain\nevent_order_violation\ndrain_ratio_exceeded",
+   "event_sequence\nstate_delta_per_tx\nvalue_flow_intra_tx\nfailed_attempt_history",
+   "event_logs_raw\nstorage_diffs\nbalance_diffs\ntransaction_receipts",
+   "Ronin Network (2022) — $625M. Compromised validator keys used to drain bridge — access control failure"
+  ],
+  [
+   "",
+   "Uninitialized Proxy Exploit",
+   "initialize() callable on live contract. Attacker sets self as owner, drains.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥6 weight",
+   "initialize_on_live_contract\nownership_transfer_then_drain\nproxy_implementation_change",
+   "execution_structure\nstate_delta_per_tx\nevent_sequence\ndeployment_to_attack",
+   "call_traces_raw\nstorage_diffs\nevent_logs_raw",
+   "Parity Wallet (2017) — $30M. Uninitialized library contract taken over via initialize()"
+  ],
+  [
+   "",
+   "Delegatecall Privilege Escalation",
+   "Malicious contract uses DELEGATECALL in privileged contract context to rewrite owner storage.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥6 weight",
+   "delegatecall_storage_write\nproxy_implementation_change\nownership_transfer_then_drain",
+   "execution_structure\nstate_delta_per_tx\nvalue_flow_intra_tx",
+   "call_traces_raw\nstorage_diffs\nbalance_diffs",
+   "Parity Multisig (2017) — $31M. delegatecall to library let attacker become owner"
+  ],
+  [
+   "",
+   "Selfdestruct Drain",
+   "SELFDESTRUCT forces all ETH from contract to target address, bypassing withdrawal logic.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥6 weight",
+   "selfdestruct_detected\nnet_negative_contract_balance\ndrain_ratio_exceeded",
+   "execution_structure\nvalue_flow_intra_tx\nfailed_internals",
+   "call_traces_raw\nbalance_diffs\ntransaction_receipts",
+   "Solidity selfdestruct pattern — used in multiple CTF exploits and real force-send attacks"
+  ],
+  [
+   "MEV / Sandwich",
+   "Sandwich Attack",
+   "Attacker buys before victim swap, victim moves price, attacker sells after. Pure MEV extraction.",
+   "Type B\nMulti Tx\n(same block)",
+   "Min 3 signals\nThreshold: ≥5 weight",
+   "reserve_ratio_spike\nhigh_gas_anomaly\nfund_dispersion_post_attack",
+   "block_address_activity\ntransaction_timeline\nvalue_flow_intra_tx\nevent_sequence",
+   "transactions_raw\nblock_headers\nevent_logs_raw\nbalance_diffs",
+   "Generalized MEV bots (2022) — Hundreds of millions extracted annually via sandwich attacks on Uniswap"
+  ],
+  [
+   "",
+   "Frontrunning",
+   "Attacker copies pending tx, submits with higher gas to execute first and capture expected profit.",
+   "Type B\nMulti Tx\n(same block)",
+   "Min 2 signals\nThreshold: ≥3 weight",
+   "high_gas_anomaly\nnew_address_first_interaction\nevent_order_violation",
+   "block_address_activity\ntransaction_timeline\ngas_analysis_per_tx",
+   "transactions_raw\nblock_headers\ntransaction_receipts",
+   "Bancor frontrunning (2019) — Arbitrage bots frontrunning user trades on AMMs"
+  ],
+  [
+   "",
+   "Liquidation Manipulation",
+   "Price moved to force liquidation threshold, attacker performs liquidation for bonus.",
+   "Type B\nMulti Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "spot_price_manipulation\nreserve_ratio_spike\nliquidation_cascade_trigger",
+   "price_reads\nblock_address_activity\nvalue_flow_intra_tx\nliquidation_events",
+   "call_traces_raw\nevent_logs_raw\nbalance_diffs\ntransactions_raw",
+   "Compound (2020) — DAI oracle price spike triggered $89M in liquidations at 100% penalty"
+  ],
+  [
+   "Rug Pull",
+   "Liquidity Rug",
+   "Deployer removes >80% of DEX liquidity in single tx. Token price collapses to zero.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥5 weight",
+   "liquidity_removal_spike\ndrain_ratio_exceeded\naddress_funded_before_attack",
+   "value_flow_intra_tx\nevent_sequence\naddress_first_contact\ncontract_creator_graph",
+   "event_logs_raw\nbalance_diffs\ntransactions_raw\nstate_diffs",
+   "Squid Game Token (2021) — $3.4M liquidity rug. Deployer removed all LP in single tx"
+  ],
+  [
+   "",
+   "Mint and Dump",
+   "Deployer mints massive token supply to self, immediately dumps on DEX draining ETH reserves.",
+   "Type A\nSingle Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "mint_to_dump_ratio\nliquidity_removal_spike\nvalue_concentration",
+   "event_sequence\nvalue_flow_intra_tx\ncontract_creator_graph\naddress_interaction_graph",
+   "event_logs_raw\nbalance_diffs\ntransactions_raw",
+   "Multiple BSC tokens (2021-2022) — Hundreds of mint-and-dump rug pulls on PancakeSwap"
+  ],
+  [
+   "",
+   "Infinite Approval Drain",
+   "User approved contract for max spend. Rogue deployer calls transferFrom to drain entire balance.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥5 weight",
+   "approval_for_max_amount\ndrain_ratio_exceeded\ncontract_deployed_before_attack",
+   "event_sequence\nstate_delta_per_tx\nfund_hop_chains\ndeployment_to_attack",
+   "event_logs_raw\nstorage_diffs\ntransactions_raw",
+   "Unlimited approval exploits (ongoing) — Millions drained via stale max approvals to malicious contracts"
+  ],
+  [
+   "",
+   "Slow Rug (Gradual Drain)",
+   "Deployer slowly drains protocol across many txs over days to avoid large-value alerts.",
+   "Type B/C\nMulti Tx\nExtended Campaign",
+   "Min 2 signals (cumulative)\nThreshold: ≥5 weight (time-window aggregated)",
+   "drain_ratio_exceeded (cumulative)\naddress_funded_before_attack\nfailed_attempts_before_success",
+   "address_activity_summary\ntransaction_timeline\nvalue_flow_graph\nbalance_spike_registry",
+   "transactions_raw\nbalance_diffs\ntransaction_receipts\nblock_headers",
+   "Frosties NFT (2022) — Gradual withdrawal of mint proceeds over weeks before abandoning project"
+  ],
+  [
+   "Token Mechanism",
+   "Donation Attack",
+   "Direct ETH send to vault (no calldata) inflates totalAssets without minting shares, stealing from existing depositors.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥5 weight",
+   "donation_balance_inflation\nvault_share_price_spike\nnet_negative_contract_balance",
+   "donation_tracker\nshare_price_history\nvalue_flow_intra_tx",
+   "balance_diffs\ntransactions_raw\nstorage_diffs",
+   "ERC4626 vault pattern — Donation attack vector identified in multiple vault audits 2022-2023"
+  ],
+  [
+   "",
+   "ERC4626 Vault Inflation Attack",
+   "First depositor mints minimal shares at 1:1 ratio, donates to inflate share price, subsequent depositors get zero shares.",
+   "Type B\nMulti Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "vault_share_price_spike\ndonation_balance_inflation\nlarge_value_inflow_spike",
+   "share_price_history\ndonation_tracker\nvalue_flow_intra_tx\nevent_sequence",
+   "storage_diffs\nevent_logs_raw\nbalance_diffs\ntransactions_raw",
+   "OpenZeppelin ERC4626 first-depositor issue — Patched 2022. Multiple protocols affected"
+  ],
+  [
+   "",
+   "Permit / EIP-2612 Signature Abuse",
+   "Stolen or phished permit() signature used to drain tokens without victim's on-chain approval tx.",
+   "Type A\nSingle Tx",
+   "Min 2 signals\nThreshold: ≥6 weight",
+   "permit_used_before_owner_approval\napproval_for_max_amount\ndrain_ratio_exceeded",
+   "permit_usage_log\napproval_registry\ntoken_transfer_graph\nevent_sequence",
+   "event_logs_raw\ncall_traces_raw\ntransactions_raw",
+   "USDC/DAI permit phishing (2022-2023) — Multiple cases of phished permit signatures draining wallets"
+  ],
+  [
+   "",
+   "Integer Overflow Exploit",
+   "Arithmetic wraps around uint256 max. Addition producing near-zero or subtraction producing near-max balance.",
+   "Type A\nSingle Tx",
+   "Min 1 signal\nThreshold: ≥3 weight",
+   "integer_overflow_detected\nevent_parameter_mismatch\nstorage_update_delay",
+   "state_delta_per_tx\nstorage_mutations\nevent_sequence",
+   "storage_diffs\nstate_diffs\nevent_logs_raw",
+   "BEC Token (2018) — $900M paper loss. Integer overflow in batchTransfer minted near-infinite tokens"
+  ],
+  [
+   "",
+   "Fee-on-Transfer Token Exploit",
+   "Protocol incorrectly accounts for fee-on-transfer tokens. Credited full amount but only received partial.",
+   "Type A\nSingle Tx",
+   "Min 1 signal\nThreshold: ≥2 weight",
+   "fee_on_transfer_discrepancy\nevent_parameter_mismatch",
+   "token_transfer_graph\nevent_sequence\nstate_delta_per_tx",
+   "event_logs_raw\nstorage_diffs\ntransactions_raw",
+   "Safemoon / STA token exploits (2021) — Fee-on-transfer tokens exploited in AMM accounting bugs"
+  ],
+  [
+   "",
+   "Rebasing Token Exploit",
+   "Rebasing tokens change holder balances without Transfer events. Protocol accounting breaks.",
+   "Type A/B",
+   "Min 1 signal\nThreshold: ≥2 weight",
+   "rebasing_balance_manipulation\nmissing_expected_event",
+   "storage_mutations\nevent_sequence\ntoken_transfer_graph",
+   "event_logs_raw\nstorage_diffs",
+   "AMPL rebase exploits — Protocols using AMPL as collateral suffered accounting errors from rebases"
+  ],
+  [
+   "",
+   "Signature Replay Attack",
+   "Valid previously-used signature replayed on different chain or after nonce reset.",
+   "Type A/B",
+   "Min 1 signal\nThreshold: ≥3 weight",
+   "eip712_replay_detected\nnonce_gap_detected\npermit_used_before_owner_approval",
+   "permit_usage_log\nnonce_tracking\nevent_sequence",
+   "event_logs_raw\ncall_traces_raw\nstate_diffs",
+   "Poly Network (2021) component — Cross-chain signature replay contributed to $611M exploit"
+  ],
+  [
+   "Graph / Attribution",
+   "Attacker Contract Deployment Pattern",
+   "Purpose-built exploit contract deployed by fresh wallet within blocks of attack.",
+   "Type C\nMulti Address",
+   "Min 3 signals\nThreshold: ≥5 weight",
+   "contract_deployed_before_attack\naddress_funded_before_attack\nnew_address_first_interaction",
+   "contract_creator_graph\ndeployment_to_attack\naddress_first_contact\nnonce_tracking",
+   "transactions_raw\nstate_diffs\ntransaction_receipts\nblock_headers",
+   "Standard across all DeFi exploits — Euler, Mango, Beanstalk all used fresh deployer EOAs"
+  ],
+  [
+   "",
+   "Fund Dispersion Post Attack",
+   "Stolen funds split to N fresh addresses within 50 blocks of exploit.",
+   "Type C\nMulti Address",
+   "Min 2 signals\nThreshold: ≥4 weight",
+   "fund_dispersion_post_attack\nvalue_dispersion\nbalance_spike_registry",
+   "fund_hop_chains\nvalue_flow_graph\nbalance_spike_registry\naddress_first_contact",
+   "balance_diffs\ntransactions_raw\nblock_headers",
+   "Euler Finance post-exploit (2023) — Funds split across multiple addresses before eventual return"
+  ],
+  [
+   "",
+   "Address Clustering",
+   "Multiple wallets identified as same attacker via common funder, timing, or deployer.",
+   "Type C\nMulti Address",
+   "Min 2 signals\nThreshold: ≥4 weight",
+   "address_cluster_identified\ncontract_creator_linked\naddress_funded_before_attack",
+   "address_interaction_graph\ncontract_creator_graph\nfund_hop_chains\naddress_activity_summary",
+   "transactions_raw\nstate_diffs\nbalance_diffs\nblock_headers",
+   "Lazarus Group ETH laundering — Multiple wallets identified as same actor via common funding source"
+  ],
+  [
+   "",
+   "Mixer / Bridge Detection",
+   "Stolen funds routed through Tornado Cash or cross-chain bridge to obscure trail.",
+   "Type C\nMulti Address",
+   "Min 1 signal\nThreshold: ≥3 weight",
+   "mixer_interaction_detected\nbridge_interaction_detected\nmulti_hop_fund_trail",
+   "fund_hop_chains\nvalue_flow_graph\naddress_interaction_graph",
+   "transactions_raw\nbalance_diffs\nevent_logs_raw",
+   "Ronin Bridge hacker (2022) — Used Tornado Cash and multiple bridges to launder $625M"
+  ],
+  [
+   "",
+   "Cross-Contract Collusion",
+   "Two independently-deployed contracts coordinate in attack — one manipulates state, other exploits.",
+   "Type C\nMulti Address",
+   "Min 3 signals\nThreshold: ≥6 weight",
+   "address_cluster_identified\ncontract_creator_linked\nevent_order_violation",
+   "contract_creator_graph\nexecution_structure\naddress_interaction_graph\ndeployment_to_attack",
+   "call_traces_raw\nstate_diffs\ntransactions_raw",
+   "Multiple complex DeFi exploits use separate helper contracts deployed by same EOA"
+  ],
+  [
+   "",
+   "Governance Manipulation",
+   "Attacker accumulates voting power (via flash loan or gradual purchase) to pass malicious proposal.",
+   "Type A/B",
+   "Min 2 signals\nThreshold: ≥5 weight",
+   "governance_instant_execution\nflashloan_bracket_detected\ndrain_ratio_exceeded",
+   "governance_actions\nexecution_structure\nevent_sequence\nvalue_flow_intra_tx",
+   "event_logs_raw\ncall_traces_raw\nstorage_diffs\ntransactions_raw",
+   "Beanstalk (2022) $182M + Build Finance (2022) $470K — Governance takeover attacks"
+  ],
+  [
+   "",
+   "Liquidation Cascade",
+   "Coordinated price manipulation triggers cascading liquidations across multiple borrowers in same protocol.",
+   "Type B\nMulti Tx",
+   "Min 3 signals\nThreshold: ≥7 weight",
+   "liquidation_cascade_trigger\nspot_price_manipulation\nreserve_ratio_spike",
+   "liquidation_events\nprice_reads\nblock_address_activity\ntransaction_timeline",
+   "call_traces_raw\nevent_logs_raw\nbalance_diffs\ntransactions_raw",
+   "Compound DAI price incident (2020) — $89M liquidated due to single oracle price spike"
+  ]
+ ],
+ "05 Signal → Attack Mapping": [
+  [
+   "ChainSentinel — Signal to Attack Mapping (condensed list format)",
+   "",
+   ""
+  ],
+  [
+   "Signal Name",
+   "Weight",
+   "Attack Patterns This Signal Feeds"
+  ],
+  [
+   "recursive_depth_pattern",
+   "W3",
+   "Classic Reentrancy, Cross-Function Reentrancy, ERC777 Hook Reentrancy"
+  ],
+  [
+   "cross_function_reentry",
+   "W3",
+   "Cross-Function Reentrancy"
+  ],
+  [
+   "value_drain_per_depth",
+   "W3",
+   "Classic Reentrancy, ERC777 Hook Reentrancy"
+  ],
+  [
+   "storage_update_delay",
+   "W3",
+   "Classic Reentrancy, Cross-Function Reentrancy, ERC777 Hook, Read-Only Reentrancy"
+  ],
+  [
+   "hook_callback_detected",
+   "W2",
+   "ERC777 Hook Reentrancy"
+  ],
+  [
+   "delegatecall_storage_write",
+   "W3",
+   "Delegatecall Privilege Escalation, Uninitialized Proxy Exploit"
+  ],
+  [
+   "proxy_implementation_change",
+   "W3",
+   "Uninitialized Proxy Exploit, Delegatecall Escalation"
+  ],
+  [
+   "selfdestruct_detected",
+   "W3",
+   "Selfdestruct Drain"
+  ],
+  [
+   "flashloan_bracket_detected",
+   "W3",
+   "Classic Flash Loan, Flash Loan+Oracle, Flash Loan+Governance, Multi-Pool Flash Loan"
+  ],
+  [
+   "initialize_on_live_contract",
+   "W3",
+   "Uninitialized Proxy Exploit"
+  ],
+  [
+   "large_value_inflow_spike",
+   "W2",
+   "Flash Loan (all), Collateral Pre-staging"
+  ],
+  [
+   "drain_ratio_exceeded",
+   "W3",
+   "Classic Reentrancy, Flash Loan exploits, Ownership Hijack, Rug Pull, Selfdestruct"
+  ],
+  [
+   "value_concentration",
+   "W1",
+   "Fund consolidation pre-attack, Multi-Pool Flash Loan"
+  ],
+  [
+   "value_dispersion",
+   "W2",
+   "Fund Dispersion Post Attack, Slow Rug"
+  ],
+  [
+   "net_negative_contract_balance",
+   "W3",
+   "Selfdestruct Drain, Silent Drain variants"
+  ],
+  [
+   "mint_to_dump_ratio",
+   "W3",
+   "Mint and Dump"
+  ],
+  [
+   "liquidity_removal_spike",
+   "W3",
+   "Liquidity Rug"
+  ],
+  [
+   "vault_share_price_spike",
+   "W3",
+   "Vault Inflation Attack, Donation Attack"
+  ],
+  [
+   "deposit_withdraw_same_tx",
+   "W2",
+   "Classic Reentrancy, Cross-Function Reentrancy"
+  ],
+  [
+   "event_order_violation",
+   "W2",
+   "Reentrancy variants, Ownership Hijack, Flash Loan+Governance"
+  ],
+  [
+   "duplicate_event_emission",
+   "W3",
+   "Classic Reentrancy, ERC777 Hook"
+  ],
+  [
+   "missing_expected_event",
+   "W3",
+   "Selfdestruct Drain, Silent Drain, Exploit bypass paths"
+  ],
+  [
+   "event_parameter_mismatch",
+   "W2",
+   "Reentrancy amount manipulation, Fee-on-Transfer Exploit, Integer Overflow"
+  ],
+  [
+   "ownership_transfer_then_drain",
+   "W3",
+   "Ownership Hijack + Drain"
+  ],
+  [
+   "governance_instant_execution",
+   "W3",
+   "Flash Loan + Governance Attack, Governance Manipulation"
+  ],
+  [
+   "permit_used_before_owner_approval",
+   "W3",
+   "Permit Signature Abuse, Signature Replay"
+  ],
+  [
+   "new_address_first_interaction",
+   "W1",
+   "Attacker wallet identification (context only)"
+  ],
+  [
+   "contract_deployed_before_attack",
+   "W2",
+   "Attacker Contract Deployment Pattern, all exploit types"
+  ],
+  [
+   "address_funded_before_attack",
+   "W2",
+   "Attacker wallet staging, Liquidity Rug, Slow Rug"
+  ],
+  [
+   "nonce_gap_detected",
+   "W1",
+   "Private mempool usage (context only)"
+  ],
+  [
+   "high_gas_anomaly",
+   "W1",
+   "Reentrancy, Sandwich, Deep exploit calls (context only)"
+  ],
+  [
+   "failed_attempts_before_success",
+   "W2",
+   "All exploit types with probe phase"
+  ],
+  [
+   "approval_for_max_amount",
+   "W2",
+   "Infinite Approval Drain, Permit Abuse"
+  ],
+  [
+   "price_read_during_callback",
+   "W3",
+   "Read-Only Reentrancy, Oracle Manipulation"
+  ],
+  [
+   "spot_price_manipulation",
+   "W3",
+   "AMM Spot Price Manipulation, Flash Loan+Oracle, Liquidation Manipulation"
+  ],
+  [
+   "reserve_ratio_spike",
+   "W2",
+   "Oracle Manipulation, Sandwich Attack, Liquidation Manipulation"
+  ],
+  [
+   "twap_drift_detected",
+   "W2",
+   "TWAP Manipulation"
+  ],
+  [
+   "multi_oracle_divergence",
+   "W3",
+   "Multi-Oracle Inconsistency Exploit"
+  ],
+  [
+   "price_before_after_mismatch",
+   "W2",
+   "All Oracle Manipulation variants"
+  ],
+  [
+   "donation_balance_inflation",
+   "W3",
+   "Donation Attack, Vault Inflation Attack"
+  ],
+  [
+   "fund_dispersion_post_attack",
+   "W2",
+   "Fund Dispersion Post Attack"
+  ],
+  [
+   "mixer_interaction_detected",
+   "W3",
+   "Mixer/Bridge Detection"
+  ],
+  [
+   "bridge_interaction_detected",
+   "W3",
+   "Mixer/Bridge Detection"
+  ],
+  [
+   "address_cluster_identified",
+   "W2",
+   "Address Clustering, Cross-Contract Collusion"
+  ],
+  [
+   "contract_creator_linked",
+   "W3",
+   "Attacker infrastructure confirmation, Cross-Contract Collusion"
+  ],
+  [
+   "multi_hop_fund_trail",
+   "W2",
+   "Fund trail mapping, prosecution evidence"
+  ],
+  [
+   "integer_overflow_detected",
+   "W3",
+   "Integer Overflow Exploit"
+  ],
+  [
+   "liquidation_cascade_trigger",
+   "W2",
+   "Liquidation Cascade, Liquidation Manipulation"
+  ],
+  [
+   "eip712_replay_detected",
+   "W3",
+   "Signature Replay Attack"
+  ],
+  [
+   "fee_on_transfer_discrepancy",
+   "W2",
+   "Fee-on-Transfer Token Exploit"
+  ],
+  [
+   "rebasing_balance_manipulation",
+   "W2",
+   "Rebasing Token Exploit"
+  ],
+  [
+   "cross_contract_state_dependency",
+   "W2",
+   "Cross-Contract Collusion, Read-Only Reentrancy"
+  ]
+ ],
+ "06 Derived → Signal Mapping": [
+  [
+   "ChainSentinel — Derived Log to Signal Mapping",
+   "",
+   ""
+  ],
+  [
+   "Derived Log Name",
+   "Status",
+   "Signals This Log Enables"
+  ],
+  [
+   "execution_structure",
+   "New — Critical",
+   "recursive_depth_pattern, cross_function_reentry, value_drain_per_depth, delegatecall_storage_write, hook_callback_detected, flashloan_bracket_detected, selfdestruct_detected, initialize_on_live_contract, price_read_during_callback, cross_contract_state_dependency"
+  ],
+  [
+   "value_flow_intra_tx",
+   "New — Critical",
+   "value_drain_per_depth, drain_ratio_exceeded, flashloan_bracket_detected, liquidity_removal_spike, net_negative_contract_balance, large_value_inflow_spike, vault_share_price_spike"
+  ],
+  [
+   "state_delta_per_tx",
+   "New — Critical",
+   "storage_update_delay, ownership_transfer_then_drain, proxy_implementation_change, initialize_on_live_contract, integer_overflow_detected, rebasing_balance_manipulation"
+  ],
+  [
+   "event_sequence",
+   "New — Critical ABI-DEP",
+   "deposit_withdraw_same_tx, event_order_violation, duplicate_event_emission, missing_expected_event, event_parameter_mismatch, ownership_transfer_then_drain, governance_instant_execution, permit_used_before_owner_approval"
+  ],
+  [
+   "price_reads",
+   "New — Critical",
+   "price_read_during_callback, spot_price_manipulation, reserve_ratio_spike, twap_drift_detected, multi_oracle_divergence, price_before_after_mismatch, donation_balance_inflation"
+  ],
+  [
+   "execution_structure + internal_calls",
+   "Existing + New",
+   "delegatecall_storage_write, selfdestruct_detected, hook_callback_detected"
+  ],
+  [
+   "eth_transfers",
+   "Existing",
+   "drain_ratio_exceeded, large_value_inflow_spike, value_dispersion, value_concentration, liquidity_removal_spike, net_negative_contract_balance"
+  ],
+  [
+   "failed_transactions",
+   "Existing",
+   "failed_attempts_before_success"
+  ],
+  [
+   "failed_internals",
+   "New",
+   "failed_attempts_before_success, selfdestruct_drain_path"
+  ],
+  [
+   "enriched_event_logs",
+   "Existing — ABI-DEP",
+   "deposit_withdraw_same_tx, event_order_violation, duplicate_event_emission, missing_expected_event"
+  ],
+  [
+   "storage_mutations",
+   "Existing",
+   "proxy_implementation_change, storage_update_delay, integer_overflow_detected, rebasing_balance_manipulation"
+  ],
+  [
+   "gas_analysis_per_tx",
+   "Existing",
+   "high_gas_anomaly"
+  ],
+  [
+   "transaction_timeline",
+   "Existing",
+   "twap_drift_detected, price_before_after_mismatch, sandwich ordering context"
+  ],
+  [
+   "block_address_activity",
+   "New",
+   "reserve_ratio_spike (multi-block), twap_drift_detected, liquidation_cascade_trigger, sandwich ordering"
+  ],
+  [
+   "nonce_tracking",
+   "Existing",
+   "nonce_gap_detected, new_address_first_interaction"
+  ],
+  [
+   "address_first_contact",
+   "New",
+   "new_address_first_interaction, address_funded_before_attack, contract_deployed_before_attack"
+  ],
+  [
+   "deployment_to_attack",
+   "New",
+   "contract_deployed_before_attack"
+  ],
+  [
+   "failed_attempt_history",
+   "New",
+   "failed_attempts_before_success"
+  ],
+  [
+   "address_activity_summary",
+   "Existing",
+   "address_funded_before_attack, address_cluster_identified (partial)"
+  ],
+  [
+   "value_flow_graph",
+   "Existing — Extend",
+   "fund_dispersion_post_attack, mixer_interaction_detected, bridge_interaction_detected, multi_hop_fund_trail"
+  ],
+  [
+   "fund_hop_chains",
+   "New — Graph",
+   "fund_dispersion_post_attack, mixer_interaction_detected, bridge_interaction_detected, multi_hop_fund_trail, address_cluster_identified, value_concentration, value_dispersion"
+  ],
+  [
+   "address_interaction_graph",
+   "New — Graph",
+   "address_cluster_identified, cross_contract_state_dependency"
+  ],
+  [
+   "contract_creator_graph",
+   "New — Graph",
+   "contract_creator_linked, address_cluster_identified"
+  ],
+  [
+   "balance_spike_registry",
+   "New",
+   "large_value_inflow_spike, fund_dispersion_post_attack"
+  ],
+  [
+   "token_transfer_graph",
+   "New — ABI-DEP",
+   "mint_to_dump_ratio, fee_on_transfer_discrepancy"
+  ],
+  [
+   "approval_registry",
+   "New — ABI-DEP",
+   "approval_for_max_amount"
+  ],
+  [
+   "governance_actions",
+   "New — ABI-DEP",
+   "governance_instant_execution"
+  ],
+  [
+   "liquidation_events",
+   "New — ABI-DEP",
+   "liquidation_cascade_trigger"
+  ],
+  [
+   "permit_usage_log",
+   "New — ABI-DEP",
+   "permit_used_before_owner_approval, eip712_replay_detected"
+  ],
+  [
+   "donation_tracker",
+   "New",
+   "donation_balance_inflation"
+  ],
+  [
+   "share_price_history",
+   "New — ABI-DEP",
+   "vault_share_price_spike, donation_balance_inflation"
+  ]
+ ],
+ "07 Fail Cases + Edge Cases": [
+  [
+   "ChainSentinel — Fail Cases, False Positives and Edge Cases",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Scenario",
+   "Why It Looks Like Attack",
+   "Why It Is NOT Attack",
+   "How To Filter / Resolve",
+   "Signals Affected"
+  ],
+  [
+   "Proxy Pattern Normal Operation",
+   "DELEGATECALL detected in execution trace + storage slots modified = delegatecall_storage_write fires",
+   "Legitimate proxy contracts (OpenZeppelin TransparentProxy, UUPS) use delegatecall for all function calls. This is intended design.",
+   "Whitelist known proxy factory addresses. Check if implementation slot matches known verified contract. Cross-reference with contract_deployments to see if this is a verified upgrade.",
+   "delegatecall_storage_write, proxy_implementation_change"
+  ],
+  [
+   "Flash Loan Legitimate Use",
+   "flashloan_bracket_detected fires + large_value_inflow_spike + drain_ratio_exceeded",
+   "Flash loans are used legitimately for arbitrage, collateral swaps, self-liquidation. Repayment at tx end is the defining feature of LEGITIMATE use.",
+   "Check net effect on OTHER contracts. Legitimate flash loan: no OTHER contract loses funds. Attack: a victim contract net balance decreases. Require drain_ratio_exceeded on victim (not just borrower) to confirm.",
+   "flashloan_bracket_detected, drain_ratio_exceeded, large_value_inflow_spike"
+  ],
+  [
+   "AMM Concentrated Liquidity Removal",
+   "liquidity_removal_spike fires when LP removes large concentrated liquidity position",
+   "Uniswap V3 / concentrated liquidity positions can represent >80% of pool range. Legitimate LPs removing their own position triggers this signal.",
+   "Check if remover address matches original LP provider address. Check time between LP deposit and removal — slow rug takes days, legitimate removal can be immediate but from known address.",
+   "liquidity_removal_spike, drain_ratio_exceeded"
+  ],
+  [
+   "Router Multi-Hop Swap",
+   "Same router address appears at multiple depths = recursive_depth_pattern may fire",
+   "DEX aggregators (1inch, Paraswap) and routers legitimately route through multiple pools. Router address appears at depth 0, 2, 4 across hops.",
+   "Whitelist known router and aggregator addresses. Check if to_address is whitelisted router. Require that the repeated address is NOT the tx_from (attacker sends to victim, not router to itself).",
+   "recursive_depth_pattern, cross_function_reentry"
+  ],
+  [
+   "Governance Timelock Execution",
+   "Privileged function called + ownership patterns = ownership_transfer_then_drain may fire",
+   "Properly governed protocols execute proposals through timelocks. The execution call looks like a privileged action but was voted on days earlier.",
+   "Check governance_actions log for proposal created N days before execution. Require zero governance_actions evidence before flagging ownership attacks. Timelock contracts should be whitelisted.",
+   "ownership_transfer_then_drain, event_order_violation, governance_instant_execution"
+  ],
+  [
+   "Airdrop / Batch Distribution",
+   "value_dispersion fires — single address sending to many fresh addresses",
+   "Token airdrops, NFT mints, salary distributions all send to many fresh addresses in short windows.",
+   "Check if sender is known protocol or deployer address. Check if value per recipient is uniform (airdrop pattern) vs irregular (laundering pattern). Cross-reference with token transfer events vs raw ETH.",
+   "value_dispersion, fund_dispersion_post_attack"
+  ],
+  [
+   "Large Whale Deposit",
+   "large_value_inflow_spike fires on a large DeFi deposit",
+   "Wealthy users (whales) make large deposits into DeFi protocols. 10x baseline threshold fires on first large deposit from new whale.",
+   "Require large_value_inflow_spike to be combined with at least one other signal (deployment_before_attack OR failed_attempts_before_success). Alone it is too noisy.",
+   "large_value_inflow_spike"
+  ],
+  [
+   "ERC4626 Normal Yield Accrual",
+   "vault_share_price_spike fires when yield is distributed to vault",
+   "Yield-bearing vaults regularly update totalAssets as yield accrues. Share price rises legitimately over time.",
+   "Set threshold appropriately — normal yield accrual is <0.1% per block. Spike threshold should be >100% per tx. Time-window rate of change, not absolute value.",
+   "vault_share_price_spike, donation_balance_inflation"
+  ],
+  [
+   "Self-Liquidation (Healthy Practice)",
+   "liquidation_cascade_trigger fires + drain_ratio_exceeded",
+   "Users proactively self-liquidate undercollateralized positions to avoid penalty. Looks like liquidation attack but is protective.",
+   "Check if liquidator == borrower address. Self-liquidation: same address on both sides. Attack liquidation: different addresses, usually with price manipulation preceding.",
+   "liquidation_cascade_trigger, spot_price_manipulation"
+  ],
+  [
+   "Multiple Contracts Sharing Library",
+   "contract_creator_linked fires — multiple contracts same deployer",
+   "Protocol teams deploy many contracts: router, factory, multiple pool contracts, governance, token. All share same deployer but are not colluding.",
+   "Require contract_creator_linked to be combined with temporal signal (deployed within 10 blocks of attack) not just shared deployer. Known protocol deployers should be in whitelist registry.",
+   "contract_creator_linked, address_cluster_identified, cross_contract_collusion"
+  ],
+  [
+   "Failed Tx From Legitimate User",
+   "failed_attempts_before_success fires — user had failed txs before success",
+   "Normal users make mistakes — wrong slippage, insufficient gas, wrong parameters. Failed txs before success is extremely common.",
+   "Require failed_attempts_before_success to show function selector matches the eventual exploit function. Random failed txs with different selectors are noise. Require at least 2 failures specifically against target function.",
+   "failed_attempts_before_success"
+  ],
+  [
+   "Rebase Token in Normal Operation",
+   "rebasing_balance_manipulation fires on scheduled rebase",
+   "AMPL, OHM, and other elastic supply tokens rebase on schedule. Balance changes without Transfer events is their design.",
+   "Maintain a registry of known rebase token addresses. Suppress rebasing_balance_manipulation for addresses in this registry during known rebase windows.",
+   "rebasing_balance_manipulation, missing_expected_event"
+  ]
+ ],
+ "08 Build Order + Dependencies": [
+  [
+   "ChainSentinel — Build Order and Dependencies",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Follow these phases in order. Do not enable a later phase until all components in the previous phase are complete.",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Phase",
+   "Component",
+   "Type",
+   "Depends On",
+   "Blocks These If Missing",
+   "Complexity"
+  ],
+  [
+   "Phase 1\nFoundation",
+   "block_headers ingestion",
+   "Raw Log",
+   "None — start here",
+   "Everything",
+   "Low"
+  ],
+  [
+   "",
+   "transactions_raw ingestion",
+   "Raw Log",
+   "block_headers",
+   "Everything",
+   "Low"
+  ],
+  [
+   "",
+   "transaction_receipts ingestion",
+   "Raw Log",
+   "transactions_raw",
+   "failed_transactions, gas analysis",
+   "Low"
+  ],
+  [
+   "",
+   "event_logs_raw ingestion",
+   "Raw Log",
+   "transactions_raw",
+   "All event-based derivations",
+   "Low"
+  ],
+  [
+   "",
+   "balance_diffs ingestion",
+   "Raw Log",
+   "Archive node required",
+   "eth_transfers, value_flow_intra_tx",
+   "Low"
+  ],
+  [
+   "",
+   "storage_diffs ingestion",
+   "Raw Log",
+   "Archive node required",
+   "state_delta_per_tx, storage_mutations",
+   "Low"
+  ],
+  [
+   "",
+   "state_diffs ingestion",
+   "Raw Log",
+   "Archive node required",
+   "nonce_tracking, contract_creator_graph",
+   "Low"
+  ],
+  [
+   "",
+   "call_traces_raw ingestion",
+   "Raw Log",
+   "Archive node / Foundry required",
+   "ALL structural signals — CRITICAL",
+   "Medium"
+  ],
+  [
+   "",
+   "abi_extractor.py",
+   "ABI Module",
+   "Client ABI (.sol files)",
+   "All ABI-DEPENDENT signals",
+   "Low"
+  ],
+  [
+   "",
+   "decode_logs.py",
+   "ABI Module",
+   "abi_extractor.py output",
+   "All decoded event signals",
+   "Low"
+  ],
+  [
+   "Phase 2\nCore Derived",
+   "contract_deployments",
+   "Derived Log",
+   "Phase 1 complete",
+   "contract_deployed_before_attack signal",
+   "Low"
+  ],
+  [
+   "",
+   "contract_interactions",
+   "Derived Log",
+   "Phase 1 complete",
+   "new_address_first_interaction signal",
+   "Low"
+  ],
+  [
+   "",
+   "eth_transfers",
+   "Derived Log",
+   "balance_diffs",
+   "drain_ratio_exceeded, value signals",
+   "Low"
+  ],
+  [
+   "",
+   "failed_transactions",
+   "Derived Log",
+   "transaction_receipts",
+   "failed_attempts_before_success",
+   "Low"
+  ],
+  [
+   "",
+   "enriched_event_logs",
+   "Derived Log",
+   "event_logs_raw + ABI",
+   "event_sequence prerequisite",
+   "Low"
+  ],
+  [
+   "",
+   "internal_calls",
+   "Derived Log",
+   "call_traces_raw",
+   "execution_structure prerequisite",
+   "Medium"
+  ],
+  [
+   "",
+   "nonce_tracking",
+   "Derived Log",
+   "state_diffs",
+   "nonce_gap_detected signal",
+   "Low"
+  ],
+  [
+   "",
+   "transaction_timeline",
+   "Derived Log",
+   "transactions + receipts + blocks",
+   "Sequence detection Layer 3",
+   "Low"
+  ],
+  [
+   "",
+   "address_activity_summary",
+   "Derived Log",
+   "transactions + balance_diffs",
+   "Behavioural signals, anomaly baseline",
+   "Medium"
+  ],
+  [
+   "Phase 3\nCritical Derived",
+   "execution_structure",
+   "Derived Log — Critical",
+   "call_traces_raw, internal_calls",
+   "ALL structural heuristics. Highest priority.",
+   "High"
+  ],
+  [
+   "",
+   "value_flow_intra_tx",
+   "Derived Log — Critical",
+   "call_traces_raw, balance_diffs",
+   "drain_ratio_exceeded, flashloan_bracket, value signals",
+   "High"
+  ],
+  [
+   "",
+   "state_delta_per_tx",
+   "Derived Log — Critical",
+   "storage_diffs, state_diffs",
+   "storage_update_delay, ownership signals",
+   "High"
+  ],
+  [
+   "",
+   "event_sequence",
+   "Derived Log — Critical",
+   "enriched_event_logs (decoded)",
+   "All event ordering signals. ABI required.",
+   "Medium"
+  ],
+  [
+   "",
+   "price_reads",
+   "Derived Log — Critical",
+   "call_traces_raw + ABI",
+   "All oracle signals",
+   "High"
+  ],
+  [
+   "",
+   "failed_internals",
+   "Derived Log",
+   "call_traces_raw",
+   "failed_attempts_before_success enhanced",
+   "Medium"
+  ],
+  [
+   "",
+   "deployment_to_attack",
+   "Derived Log",
+   "contract_deployments, contract_interactions",
+   "contract_deployed_before_attack signal",
+   "Medium"
+  ],
+  [
+   "",
+   "address_first_contact",
+   "Derived Log",
+   "contract_interactions",
+   "new_address_first_interaction signal",
+   "Low"
+  ],
+  [
+   "",
+   "block_address_activity",
+   "Derived Log",
+   "transactions + block_headers",
+   "Sandwich, frontrunning, TWAP signals",
+   "Medium"
+  ],
+  [
+   "",
+   "failed_attempt_history",
+   "Derived Log",
+   "failed_transactions",
+   "Reconnaissance signal",
+   "Low"
+  ],
+  [
+   "",
+   "storage_mutations",
+   "Derived Log",
+   "storage_diffs",
+   "proxy_implementation_change signal",
+   "Low"
+  ],
+  [
+   "Phase 4\nGraph Derived",
+   "value_flow_graph",
+   "Derived Log",
+   "transactions + call_traces",
+   "Fund tracing foundation",
+   "Medium"
+  ],
+  [
+   "",
+   "fund_hop_chains",
+   "Derived Log",
+   "value_flow_graph",
+   "mixer/bridge/dispersion signals",
+   "High"
+  ],
+  [
+   "",
+   "contract_creator_graph",
+   "Derived Log",
+   "contract_deployments, state_diffs",
+   "contract_creator_linked signal",
+   "Medium"
+  ],
+  [
+   "",
+   "address_interaction_graph",
+   "Derived Log",
+   "transactions + call_traces",
+   "address_cluster_identified signal",
+   "High"
+  ],
+  [
+   "",
+   "balance_spike_registry",
+   "Derived Log",
+   "balance_diffs + address_activity_summary",
+   "fund_dispersion signal",
+   "Medium"
+  ],
+  [
+   "Phase 5\nSpecialist Derived",
+   "approval_registry",
+   "Derived Log",
+   "event_logs_raw + ABI",
+   "permit_signature_abuse signal",
+   "Low"
+  ],
+  [
+   "",
+   "permit_usage_log",
+   "Derived Log",
+   "call_traces_raw + ABI",
+   "eip712_replay_detected signal",
+   "Medium"
+  ],
+  [
+   "",
+   "governance_actions",
+   "Derived Log",
+   "event_logs_raw + ABI",
+   "governance_vote_manipulation signal",
+   "Low"
+  ],
+  [
+   "",
+   "liquidation_events",
+   "Derived Log",
+   "event_logs_raw + ABI",
+   "liquidation_cascade_trigger signal",
+   "Low"
+  ],
+  [
+   "",
+   "donation_tracker",
+   "Derived Log",
+   "call_traces_raw + transactions",
+   "donation_inflation_attack signal",
+   "Low"
+  ],
+  [
+   "",
+   "share_price_history",
+   "Derived Log",
+   "event_logs_raw + storage_diffs",
+   "share_price_manipulation signal",
+   "Medium"
+  ],
+  [
+   "",
+   "token_transfer_graph",
+   "Derived Log",
+   "token_transfers or event_logs_raw + ABI",
+   "mint_to_dump_ratio signal",
+   "Medium"
+  ],
+  [
+   "Phase 6\nDetection Engine",
+   "Layer 1 — Structural Heuristics",
+   "Detection Module",
+   "Phase 3 complete",
+   "Attack confirmation — reentrancy family",
+   "High"
+  ],
+  [
+   "",
+   "Layer 2 — Anomaly Detection",
+   "Detection Module",
+   "Phase 2+3 + baseline computation",
+   "Reduces false positives from Layer 1",
+   "High"
+  ],
+  [
+   "",
+   "Layer 3 — Sequence Detection",
+   "Detection Module",
+   "Phase 3 complete (timeline, block_activity)",
+   "Multi-tx attack detection",
+   "High"
+  ],
+  [
+   "",
+   "Layer 4 — Graph Attribution",
+   "Detection Module",
+   "Phase 4 complete",
+   "WHO and WHERE answers post-attack",
+   "High"
+  ],
+  [
+   "",
+   "Attack Pattern Correlator",
+   "Detection Module",
+   "Layers 1-4 signals",
+   "Final confirmed attack records with confidence score",
+   "Very High"
+  ]
+ ],
+ "09 Known Address Registry": [
+  [
+   "ChainSentinel — Known Address Registry (Ethereum Mainnet)",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "⚠ This registry feeds mixer_interaction_detected and bridge_interaction_detected signals. Populate with verified addresses before deploying signal engine. Addresses marked [VERIFY] should be confirmed before use.",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Address",
+   "Type",
+   "Entity Name",
+   "Notes",
+   "Signals Fed"
+  ],
+  [
+   "0x47CE0C6eD5B0Ce3d3A51fdb1C52DC66a7c3c2936",
+   "Mixer",
+   "Tornado Cash 0.1 ETH Pool",
+   "Tornado Cash privacy protocol — OFAC sanctioned Aug 2022",
+   "mixer_interaction_detected"
+  ],
+  [
+   "0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF",
+   "Mixer",
+   "Tornado Cash 1 ETH Pool",
+   "Tornado Cash privacy protocol — OFAC sanctioned Aug 2022",
+   "mixer_interaction_detected"
+  ],
+  [
+   "0xA160cdAB225685dA1d56aa342Ad8841c3b53f291",
+   "Mixer",
+   "Tornado Cash 10 ETH Pool",
+   "Tornado Cash privacy protocol — OFAC sanctioned Aug 2022",
+   "mixer_interaction_detected"
+  ],
+  [
+   "0xD4B88Df4D29F5CedD6857912842cff3b20C8Cfa3",
+   "Mixer",
+   "Tornado Cash 100 ETH Pool",
+   "Tornado Cash privacy protocol — OFAC sanctioned Aug 2022",
+   "mixer_interaction_detected"
+  ],
+  [
+   "0x8589427373D6D84E98730D7795D8f6f8731FDA16",
+   "Mixer",
+   "Tornado Cash Router",
+   "Main router contract for all TC pools",
+   "mixer_interaction_detected"
+  ],
+  [
+   "0x4C39DD8c702E0A9Bb5a6dBDf4AD68ad9b1E9daf2",
+   "Mixer",
+   "ChipMixer [VERIFY]",
+   "ChipMixer Bitcoin-style mixing service ETH component",
+   "mixer_interaction_detected"
+  ],
+  [
+   "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
+   "Bridge",
+   "Uniswap Universal Router",
+   "Not malicious — used for routing, include for context",
+   "bridge_interaction_detected"
+  ],
+  [
+   "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
+   "Bridge",
+   "Optimism Gateway",
+   "Official Optimism L1 bridge contract",
+   "bridge_interaction_detected"
+  ],
+  [
+   "0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f",
+   "Bridge",
+   "Arbitrum Delayed Inbox",
+   "Official Arbitrum L1 bridge contract",
+   "bridge_interaction_detected"
+  ],
+  [
+   "0x2796317b0fF8538F253012862c06787Adfb8cEb",
+   "Bridge",
+   "Synapse Bridge",
+   "Cross-chain Synapse Protocol bridge",
+   "bridge_interaction_detected"
+  ],
+  [
+   "0x1116898DdA4015eD8dDefb84b6e8Bc24528Af2d8",
+   "Bridge",
+   "Multichain (AnySwap) Router [VERIFY]",
+   "Multichain cross-chain bridge — was compromised 2023",
+   "bridge_interaction_detected"
+  ],
+  [
+   "0xC564EE9f21Ed8A2d8E7e76c085740d5e4c5FaFbE",
+   "Bridge",
+   "Hop Protocol Bridge",
+   "Hop Protocol cross-chain bridge",
+   "bridge_interaction_detected"
+  ],
+  [
+   "0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552",
+   "Multisig",
+   "Gnosis Safe Mastercopy",
+   "Standard Gnosis Safe multisig — usually legitimate",
+   "address_cluster_identified (context)"
+  ]
+ ],
+ "10 Real World Walkthroughs": [
+  [
+   "ChainSentinel — Real World Attack Walkthroughs (How Our Pipeline Exposes Each Attack)",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Each walkthrough shows step-by-step what happened on-chain, which raw log captured it, which derived log processed it, which signal fired, and what alert our system would have generated.",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Attack / Incident",
+   "Step",
+   "What Happened On-Chain",
+   "Raw Log Captured It",
+   "Derived Log Processed It",
+   "Signal Fired",
+   "System Alert"
+  ],
+  [
+   "The DAO (2016)\nReentrancy\n$60M ETH",
+   "1 — Setup",
+   "Attacker deployed malicious contract with fallback() that calls splitDAO() recursively",
+   "transactions_raw\ntransaction_receipts",
+   "contract_deployments\ndeployment_to_attack",
+   "contract_deployed_before_attack (W2)",
+   "⚠ ALERT: New contract deployed 3 blocks before first DAO interaction"
+  ],
+  [
+   "",
+   "2 — Entry",
+   "Attacker called splitDAO() with 1 ETH. DAO sent ETH to attacker contract before updating internal balance",
+   "call_traces_raw\nbalance_diffs",
+   "execution_structure\nvalue_flow_intra_tx",
+   "recursive_depth_pattern (W3)\nvalue_drain_per_depth (W3)",
+   "🚨 CRITICAL: Same address at depths 0,2,4,6. ETH drain at each depth. Reentrancy confirmed."
+  ],
+  [
+   "",
+   "3 — Drain Loop",
+   "Fallback re-entered splitDAO() 30+ times before balance zeroed. 3.6M ETH drained",
+   "call_traces_raw\nstorage_diffs",
+   "execution_structure\nstate_delta_per_tx",
+   "storage_update_delay (W3)\nduplicate_event_emission (W3)",
+   "🚨 CRITICAL: Balance mapping unchanged across 30 calls. Duplicate withdraw events. Total confidence score: 11/11"
+  ],
+  [
+   "",
+   "4 — Evidence",
+   "Attacker contract balance spiked by 3.6M ETH in single tx",
+   "balance_diffs",
+   "balance_spike_registry\nvalue_flow_intra_tx",
+   "drain_ratio_exceeded (W3)\nlarge_value_inflow_spike (W2)",
+   "📋 EVIDENCE BUNDLE: Attacker address, exploit tx hash, drain amount, call trace with 30 re-entries"
+  ],
+  [
+   "Euler Finance (2023)\nFlash Loan\n$197M",
+   "1 — Staging",
+   "Fresh EOA funded from Tornado Cash, deployed attack contract 2 blocks before exploit",
+   "call_traces_raw\ntransactions_raw\nbalance_diffs",
+   "deployment_to_attack\naddress_first_contact\nfund_hop_chains",
+   "address_funded_before_attack (W2)\ncontract_deployed_before_attack (W2)\nmixer_interaction_detected (W3)",
+   "⚠ ALERT: Fresh wallet funded from Tornado Cash deployed contract 2 blocks before interacting with Euler"
+  ],
+  [
+   "",
+   "2 — Flash Loan",
+   "30M DAI flash loaned from Euler's own flash loan pool",
+   "call_traces_raw\nevent_logs_raw",
+   "execution_structure\nevent_sequence",
+   "flashloan_bracket_detected (W3)\nlarge_value_inflow_spike (W2)",
+   "⚠ ALERT: Flash loan bracket opened. 30M DAI borrowed. Monitoring all actions inside bracket."
+  ],
+  [
+   "",
+   "3 — Exploit",
+   "Used flash loan to create artificially large eToken position then self-liquidated to bypass health check",
+   "call_traces_raw\nstorage_diffs",
+   "execution_structure\nstate_delta_per_tx\nevent_sequence",
+   "event_order_violation (W2)\nstorage_update_delay (W3)\ndrain_ratio_exceeded (W3)",
+   "🚨 CRITICAL: Self-liquidation path inside flash loan bracket. Euler balance draining. Confidence: 9/9"
+  ],
+  [
+   "",
+   "4 — Dispersion",
+   "Funds split to 8 fresh wallets within 10 blocks, some routed to bridge",
+   "balance_diffs\ntransactions_raw",
+   "fund_hop_chains\nbalance_spike_registry",
+   "fund_dispersion_post_attack (W2)\nbridge_interaction_detected (W3)",
+   "📋 EVIDENCE: Full fund flow graph generated. 8 recipient addresses identified. Bridge destination flagged."
+  ],
+  [
+   "Mango Markets (2022)\nOracle Manipulation\n$117M",
+   "1 — Collateral",
+   "Attacker deposited $5M USDC collateral across two accounts on Mango Markets",
+   "event_logs_raw\nbalance_diffs",
+   "enriched_event_logs\neth_transfers",
+   "large_value_inflow_spike (W2)\naddress_funded_before_attack (W2)",
+   "⚠ ALERT: New address depositing $5M+ collateral. First interaction with protocol."
+  ],
+  [
+   "",
+   "2 — Price Pump",
+   "Used own collateral to buy MNGO perps and simultaneously drove spot price 10x on thin markets",
+   "call_traces_raw\nevent_logs_raw",
+   "price_reads\nexecution_structure\nblock_address_activity",
+   "spot_price_manipulation (W3)\nreserve_ratio_spike (W2)",
+   "🚨 CRITICAL: MNGO spot price deviated 1000% from start of tx. Price oracle manipulation confirmed."
+  ],
+  [
+   "",
+   "3 — Borrow",
+   "With inflated collateral value, borrowed $117M in various tokens against MNGO position",
+   "call_traces_raw\nstorage_diffs",
+   "price_reads\nstate_delta_per_tx",
+   "price_read_during_callback (W3)\ndrain_ratio_exceeded (W3)",
+   "🚨 CRITICAL: Borrow amount = inflated collateral value. Confirmed oracle-manipulation-then-borrow pattern. Alert all protocol operators."
+  ],
+  [
+   "",
+   "4 — Attribution",
+   "Attacker identified via governance proposal they submitted for fund return",
+   "event_logs_raw\ntransactions_raw",
+   "governance_actions\naddress_interaction_graph",
+   "address_cluster_identified (W2)\ncontract_creator_linked (W3)",
+   "📋 EVIDENCE: Governance proposal linked to attacker wallet. KYC request submitted to exchanges holding funds."
+  ],
+  [
+   "Ronin Network (2022)\nAccess Control\n$625M",
+   "1 — Key Compromise",
+   "5 of 9 validator keys compromised via social engineering — no on-chain signal at this stage",
+   "(Off-chain — no raw log)",
+   "(Not detectable pre-exploit)",
+   "(No signal — off-chain compromise)",
+   "ℹ NOTE: Private key compromise not detectable from on-chain data. Post-hoc attribution only."
+  ],
+  [
+   "",
+   "2 — Drain",
+   "Attacker used compromised keys to sign withdrawals of 173,600 ETH and 25.5M USDC",
+   "transactions_raw\nevent_logs_raw\nbalance_diffs",
+   "eth_transfers\nevent_sequence\nvalue_flow_intra_tx",
+   "drain_ratio_exceeded (W3)\nownership_transfer_then_drain (W3)\nlarge_value_inflow_spike (W2)",
+   "🚨 CRITICAL: 173,600 ETH drained in two transactions. Bridge balance near zero. drain_ratio = 100%."
+  ],
+  [
+   "",
+   "3 — Dispersion",
+   "Funds moved through multiple hops, eventually reaching Tornado Cash and exchanges",
+   "balance_diffs\ntransactions_raw",
+   "fund_hop_chains\nvalue_flow_graph",
+   "fund_dispersion_post_attack (W2)\nmixer_interaction_detected (W3)\nbridge_interaction_detected (W3)",
+   "📋 EVIDENCE BUNDLE: 12-hop fund trail generated. Tornado Cash interactions flagged. Exchange notifications sent."
+  ],
+  [
+   "Beanstalk (2022)\nFlash Loan + Governance\n$182M",
+   "1 — Proposal",
+   "Malicious governance proposal created 1 day before attack (passed emergency vote check)",
+   "event_logs_raw",
+   "governance_actions\ntransaction_timeline",
+   "(Proposal creation alone = low confidence)",
+   "ℹ NOTE: Proposal creation alone insufficient. Sequence detection activates on execution phase."
+  ],
+  [
+   "",
+   "2 — Flash Loan",
+   "$1B flash loan acquired across Aave, Uniswap, SushiSwap in single tx",
+   "call_traces_raw\nevent_logs_raw",
+   "execution_structure\nevent_sequence",
+   "flashloan_bracket_detected (W3)\nlarge_value_inflow_spike (W2)",
+   "⚠ ALERT: $1B flash loan bracket opened. Cross-pool chained borrowing detected."
+  ],
+  [
+   "",
+   "3 — Vote + Execute",
+   "Used borrowed tokens to acquire supermajority vote and immediately execute malicious proposal",
+   "call_traces_raw\nevent_logs_raw\nstorage_diffs",
+   "event_sequence\ngovernance_actions\nstate_delta_per_tx",
+   "governance_instant_execution (W3)\nflashloan_bracket_detected (W3)\ndrain_ratio_exceeded (W3)",
+   "🚨 CRITICAL: Governance proposal created and executed inside flash loan bracket. $182M drain. Confidence: 9/9"
+  ],
+  [
+   "Squid Game Token (2021)\nRug Pull\n$3.4M",
+   "1 — Deployment",
+   "Team deployed token with hidden anti-sell mechanism. No signal at deploy time.",
+   "transactions_raw\ntransaction_receipts",
+   "contract_deployments",
+   "contract_deployed_before_attack (context)",
+   "ℹ NOTE: Anti-sell mechanism not detectable from bytecode without decompilation."
+  ],
+  [
+   "",
+   "2 — Liquidity Add",
+   "Team added liquidity to Uniswap pool — legitimate appearing activity",
+   "event_logs_raw\nbalance_diffs",
+   "enriched_event_logs\neth_transfers",
+   "(No alert at this stage)",
+   "ℹ Liquidity addition is normal. No signal fires."
+  ],
+  [
+   "",
+   "3 — Rug",
+   "Team removed 100% of liquidity in single transaction. Token price → $0.",
+   "call_traces_raw\nevent_logs_raw\nbalance_diffs",
+   "value_flow_intra_tx\nevent_sequence\ncontract_creator_graph",
+   "liquidity_removal_spike (W3)\ndrain_ratio_exceeded (W3)\ncontract_creator_linked (W3)",
+   "🚨 CRITICAL: 100% liquidity removal by deployer address. Token price collapsed. Rug pull confirmed."
+  ],
+  [
+   "Euler Finance Return (2023)\nGraph Attribution\n(Fund Recovery)",
+   "1 — Dispersion",
+   "After exploit attacker split funds to multiple wallets",
+   "balance_diffs\ntransactions_raw",
+   "fund_hop_chains\nbalance_spike_registry",
+   "fund_dispersion_post_attack (W2)\nvalue_dispersion (W2)",
+   "📋 Graph traversal started. Tracking 8 recipient wallets from exploit origin."
+  ],
+  [
+   "",
+   "2 — Clustering",
+   "Multiple wallets linked to same attacker via common Tornado Cash funding source",
+   "balance_diffs\ntransactions_raw",
+   "fund_hop_chains\ncontract_creator_graph\naddress_interaction_graph",
+   "address_cluster_identified (W2)\ncontract_creator_linked (W3)",
+   "📋 CLUSTER CONFIRMED: 8 wallets = 1 entity. Common TC deposit root identified. Monitoring all cluster addresses."
+  ],
+  [
+   "",
+   "3 — Attribution",
+   "On-chain messages found between attacker and Euler team leading to negotiation",
+   "event_logs_raw\ntransactions_raw",
+   "enriched_event_logs\ntransaction_timeline",
+   "(Negotiation messages in tx input data)",
+   "📋 EVIDENCE BUNDLE: Complete fund trail, cluster map, tx messages, and timeline delivered to legal team. $197M returned."
+  ]
+ ],
+ "11 Glossary": [
+  [
+   "ChainSentinel — Glossary of Terms (Plain English for All Audiences)",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Plain English definitions for all technical terms used in this document. Written for both technical and non-technical readers.",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Term",
+   "Plain English Meaning",
+   "Technical Context",
+   "Appears In Sheet"
+  ],
+  [
+   "ABI (Application Binary Interface)",
+   "The instruction manual for a smart contract. Tells you what functions exist, what inputs they take, and what events they emit.",
+   "Required to decode raw hex topic0 hashes into human-readable event names. Without ABI events are unreadable hex strings.",
+   "00, 01, 02, 03, 04"
+  ],
+  [
+   "Archive Node",
+   "An Ethereum node that keeps complete history of every state change ever made. More expensive than a standard node.",
+   "Required for call_traces_raw, balance_diffs, storage_diffs, state_diffs. Standard nodes only serve recent state.",
+   "01, 08"
+  ],
+  [
+   "BFS (Breadth-First Search)",
+   "A method of exploring a network layer by layer. Used to trace how funds move through addresses hop by hop.",
+   "Used in fund_hop_chains to trace stolen ETH from attacker through intermediate wallets to final destination.",
+   "00, 04, 10"
+  ],
+  [
+   "Call Depth / Call Tree",
+   "When a contract calls another contract that creates a depth. Depth 0 is the original tx. Reentrancy creates abnormal depth patterns.",
+   "execution_structure records every call with its depth. recursive_depth_pattern fires when same address appears at multiple depths.",
+   "02, 03, 10"
+  ],
+  [
+   "DELEGATECALL",
+   "Contract A borrows Contract B's code but runs it in A's own storage. Like a contractor working in your office with access to all your files.",
+   "Used legitimately in proxy patterns. Exploited when attacker points it at malicious code to rewrite victim's admin slots.",
+   "03, 04"
+  ],
+  [
+   "Depth Spread",
+   "Difference between max and min call depths for the same address in one tx. Spread of 6 (depths 0,2,4,6) = strong reentrancy indicator.",
+   "Computed in execution_structure. recursive_depth_pattern threshold: depth_spread >= 2 AND call_count > 1.",
+   "02, 03"
+  ],
+  [
+   "Drain Ratio",
+   "Percentage of a contract's balance removed in a single tx. Ratio of 0.95 means 95% of funds taken out.",
+   "Computed in value_flow_intra_tx as total_out_eth / balance_at_tx_start. drain_ratio_exceeded fires when > 0.80.",
+   "02, 03, 04"
+  ],
+  [
+   "EIP-1967",
+   "Ethereum standard specifying which storage slot a proxy contract uses to store its implementation address.",
+   "proxy_implementation_change checks EIP-1967 slot specifically. If this slot changes, proxy was upgraded or attacked.",
+   "03, 04"
+  ],
+  [
+   "EIP-2612 / Permit",
+   "Extension allowing users to approve token spending via off-chain signature instead of separate on-chain tx.",
+   "permit_usage_log captures all permit() calls. Phished permit signature can drain wallet without prior on-chain approval.",
+   "02, 03, 04"
+  ],
+  [
+   "ERC20",
+   "Most common Ethereum token standard. Defines transfer, approve, transferFrom, balanceOf.",
+   "Most DeFi exploits involve ERC20 tokens. token_transfer_graph and approval_registry track ERC20 movements.",
+   "02, 03"
+  ],
+  [
+   "ERC4626",
+   "Standard for tokenised vaults. Defines share minting/burning and asset tracking. Vulnerable to inflation attacks.",
+   "share_price_history tracks ERC4626 share price per block. donation_inflation_attack and vault_inflation_attack target this.",
+   "02, 03, 04"
+  ],
+  [
+   "ERC777",
+   "Advanced token standard with hooks — callbacks firing on recipient when tokens are received.",
+   "hook_callback_detected watches for tokensReceived() called before transfer completes. ERC777 Hook Reentrancy attack family.",
+   "03, 04"
+  ],
+  [
+   "Event Log / Topic0",
+   "When a contract emits an event Ethereum stores it as a log. Topic0 is the keccak256 hash of the event signature — unreadable without ABI.",
+   "event_logs_raw contains raw topic0 values. decode_logs.py uses ABI to translate topic0 into readable event names.",
+   "01, 02, 03"
+  ],
+  [
+   "Flash Loan",
+   "A loan borrowed and repaid within the exact same transaction. No collateral needed — blockchain guarantees repayment or tx reverts.",
+   "flashloan_bracket_detected identifies borrow-use-repay structure. Flash loan alone is not an attack.",
+   "02, 03, 04"
+  ],
+  [
+   "Function Selector",
+   "First 4 bytes of keccak256 hash of a function signature. Identifies which function is being called.",
+   "transactions_raw contains raw selectors as hex (e.g. 0xa9059cbb = transfer). ABI decoding translates to function names.",
+   "01, 02"
+  ],
+  [
+   "Heuristic",
+   "A rule-based detection method. Not 100% guaranteed but reliably identifies suspicious patterns. Like a smoke detector.",
+   "Layer 1 structural heuristics read the geometry of call traces without needing to understand contract logic.",
+   "00, 03, 07"
+  ],
+  [
+   "Keccak256",
+   "Hashing algorithm Ethereum uses. Takes any input and produces a fixed 32-byte output.",
+   "abi_extractor.py computes keccak256 of event signatures to build signature_db.json used by decode_logs.py.",
+   "00, 01"
+  ],
+  [
+   "MEV (Maximal Extractable Value)",
+   "Profit extracted by controlling transaction order within a block. Bots exploit this via sandwich attacks and frontrunning.",
+   "block_address_activity derived log captures tx ordering needed to detect sandwich and frontrunning.",
+   "02, 03, 04"
+  ],
+  [
+   "Nonce",
+   "Counter tracking how many transactions an address has sent. Starts at 0 for new addresses.",
+   "nonce_tracking monitors progression. Fresh address (nonce=0) attacking a complex protocol is a strong attacker signal.",
+   "02, 03"
+  ],
+  [
+   "Oracle",
+   "Service bringing external data like prices onto the blockchain. Smart contracts cannot access the internet directly.",
+   "price_reads captures every oracle call. Oracle manipulation family covers AMM spot price, TWAP, multi-oracle attacks.",
+   "02, 03, 04"
+  ],
+  [
+   "Proxy Contract",
+   "Thin contract delegating all logic to a separate implementation contract. Proxy holds storage; implementation holds logic.",
+   "proxy_implementation_change watches for implementation slot changing. Uninitialized proxy exploit targets proxies whose initialize() was never called.",
+   "03, 04"
+  ],
+  [
+   "Reentrancy",
+   "When a contract calls an external address and that address calls back before the first call finished. The most classic DeFi vulnerability.",
+   "execution_structure and state_delta_per_tx together detect this. The DAO hack (2016, $60M) is the landmark example.",
+   "02, 03, 04, 10"
+  ],
+  [
+   "SELFDESTRUCT",
+   "EVM opcode destroying a contract and sending all its ETH to a target. Bypasses all withdrawal logic, emits no standard events.",
+   "selfdestruct_detected watches for this in execution_structure. No Withdrawn event — missing_expected_event also fires.",
+   "03, 04"
+  ],
+  [
+   "TWAP (Time-Weighted Average Price)",
+   "Price calculated as average over a time period. Harder to manipulate than spot price.",
+   "twap_drift_detected watches for sustained directional swaps across multiple blocks gradually moving TWAP.",
+   "02, 03, 04"
+  ],
+  [
+   "State Diff",
+   "Complete record of what changed in Ethereum state as result of a transaction — storage, balances, nonces.",
+   "storage_diffs, balance_diffs, state_diffs are all state diff types. state_delta_per_tx computes critical before/after deltas.",
+   "01, 02"
+  ],
+  [
+   "Confidence Weight",
+   "Number assigned to each signal indicating how strongly it indicates an attack on its own. W3=conclusive, W2=needs support, W1=context only.",
+   "Attack correlator sums weights of all fired signals. Confirmed when sum >= threshold. Classic Reentrancy threshold = 7/11.",
+   "03, 04"
+  ],
+  [
+   "Address Clustering",
+   "Grouping multiple addresses likely controlled by same entity based on behavioural patterns or common funding.",
+   "address_cluster_identified signal. address_interaction_graph and contract_creator_graph are the feeding derived logs.",
+   "02, 03, 04"
+  ]
+ ],
+ "12 Coverage Summary": [
+  [
+   "ChainSentinel — Detection Coverage Summary (8 Families, 37 Attacks)",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "High-level view of pipeline coverage per attack family. Read this first to understand the scope of detection and what data is required.",
+   "",
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Attack Family",
+   "Attacks Covered",
+   "Detection Type",
+   "Signals Required",
+   "Raw Logs Needed",
+   "ABI Required",
+   "Coverage Notes"
+  ],
+  [
+   "Reentrancy",
+   "4 variants:\nClassic, Cross-Function,\nRead-Only, ERC777 Hook",
+   "Type A\nSingle Transaction",
+   "3 signals minimum\nAll from call trace geometry",
+   "call_traces_raw (critical)\nstorage_diffs\nevent_logs_raw",
+   "Partial — structural without ABI\nEvent confirmation needs ABI",
+   "Strongest coverage. call_traces_raw is the only hard requirement. All 4 variants detectable from call depth geometry alone."
+  ],
+  [
+   "Flash Loan",
+   "4 variants:\nClassic, +Oracle,\n+Governance, Multi-Pool",
+   "Type A\nSingle Transaction",
+   "2-3 signals minimum\nBracket + drain required",
+   "call_traces_raw\nbalance_diffs\nevent_logs_raw",
+   "Partial — bracket structural\nFlashloanIssued event needs ABI",
+   "Flash loan alone is not an attack. Confirmed when combined with drain or price manipulation. Bracket detected via value flows without ABI."
+  ],
+  [
+   "Oracle Manipulation",
+   "3 variants:\nAMM Spot, TWAP,\nMulti-Oracle",
+   "Type A (Spot)\nType B (TWAP)",
+   "2-3 signals minimum\nPrice read signal critical",
+   "call_traces_raw (price_reads)\nevent_logs_raw",
+   "Required\nprice_reads needs ABI to identify oracle functions",
+   "TWAP requires multi-block correlation. Weakest detection family without ABI."
+  ],
+  [
+   "Access Control",
+   "4 variants:\nOwnership Hijack, Proxy,\nDelegatecall, Selfdestruct",
+   "Type A\nSingle Transaction",
+   "2 signals minimum\nStorage change required",
+   "call_traces_raw\nstorage_diffs\nevent_logs_raw",
+   "Partial — storage changes without ABI\nOwnership event names need ABI",
+   "Selfdestruct fully detectable without ABI. Ownership hijack benefits from ABI for event confirmation."
+  ],
+  [
+   "MEV / Sandwich",
+   "3 variants:\nSandwich, Frontrunning,\nLiquidation Manipulation",
+   "Type B\nMulti Transaction",
+   "3 signals minimum\nBlock ordering required",
+   "transactions_raw\nblock_headers\nevent_logs_raw",
+   "Partial — ordering structural\nDEX events need ABI",
+   "Frontrunning needs mempool feed for pre-confirmation. Without mempool: post-confirmation analysis only."
+  ],
+  [
+   "Rug Pull",
+   "4 variants:\nLiquidity, Mint+Dump,\nInfinite Approval, Slow Rug",
+   "Type A / Type C",
+   "2 signals minimum\nDrain or mint required",
+   "event_logs_raw (ABI critical)\nbalance_diffs\ntransactions_raw",
+   "Required\nAll rug pull signals need decoded event names",
+   "Most ABI-dependent family. Without ABI only value-based signals fire (drain_ratio)."
+  ],
+  [
+   "Token Mechanism",
+   "6 variants:\nDonation, Vault Inflation,\nPermit Abuse, Replay,\nFee-on-Transfer, Rebasing",
+   "Type A / Type B",
+   "2 signals minimum\nMechanism-specific",
+   "call_traces_raw\nevent_logs_raw\nstorage_diffs",
+   "Required for most\nPermit and token events ABI-dependent",
+   "Newest attack family. Vault inflation detectable via donation_tracker structural + share_price_history."
+  ],
+  [
+   "Graph / Attribution",
+   "5 patterns:\nDeployment Pattern,\nFund Dispersion, Clustering,\nMixer, Collusion, Cascade",
+   "Type C\nMulti Address",
+   "2 signals minimum\nGraph traversal required",
+   "balance_diffs\ntransactions_raw\nblock_headers",
+   "Not Required\nFund tracing is fully structural",
+   "Only family not requiring ABI or call_traces_raw. Works on basic transactions + balance_diffs. Known address registry critical for mixer detection."
+  ]
+ ],
+ "13 Client Checklist": [
+  [
+   "ChainSentinel — Client Data and Engagement Checklist",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "Complete at the start of every client engagement. Section A: share with client. Sections B and C: internal use only.",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "SECTION A — CLIENT DATA REQUIREMENTS (Share with client)",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "#",
+   "Requirement",
+   "Why We Need It",
+   "Impact If Missing",
+   "Client Response"
+  ],
+  [
+   "A1",
+   "Please provide smart contract ABI files (.sol or .json)",
+   "Required to decode raw event logs into human-readable names. Without ABI all event-sequence signals are blind.",
+   "Event signals UNAVAILABLE: event_order_violation, deposit_withdraw_same_tx, duplicate_event_emission, ownership signals, governance signals",
+   "☐ Provided  ☐ Partial  ☐ Not Available"
+  ],
+  [
+   "A2",
+   "Please confirm archive node access or provide archive RPC endpoint",
+   "Required for call traces, storage diffs, balance diffs. Standard RPC nodes do not expose this data.",
+   "Structural heuristics UNAVAILABLE: ALL reentrancy, flashloan, price signals. Detection limited to event-log and receipt signals only.",
+   "☐ Archive node available  ☐ Standard node only  ☐ Will provide Foundry simulation"
+  ],
+  [
+   "A3",
+   "Please provide the block range for analysis (start block to end block)",
+   "Defines scope of data ingestion.",
+   "Without range: full chain scan — significantly increases processing time and cost.",
+   "Start Block: ________  End Block: ________"
+  ],
+  [
+   "A4",
+   "Please list all contract addresses in scope",
+   "Allows targeted ingestion of only relevant contracts.",
+   "Without list: full chain scan required. Increases noise and false positives.",
+   "☐ Address list provided  ☐ Full chain scan required"
+  ],
+  [
+   "A5",
+   "Do you have a mempool feed? (Blocknative, bloXroute etc.)",
+   "Required for pre-confirmation MEV and frontrunning detection.",
+   "Sandwich and frontrunning: POST-CONFIRMATION ONLY. Cannot alert before victim tx is included.",
+   "☐ Available  ☐ Not available  ☐ Will arrange"
+  ],
+  [
+   "A6",
+   "Do you have pre-indexed ERC20 token transfer data?",
+   "Improves ERC20 flow analysis. Without this we extract from raw event logs — slower but functional.",
+   "token_transfer_graph built from event_logs_raw instead — increased processing time only.",
+   "☐ Available  ☐ Not available"
+  ],
+  [
+   "A7",
+   "Please provide any known attacker or suspicious addresses",
+   "Pre-seeding known address registry improves attribution confidence immediately.",
+   "Graph attribution starts from zero — clustering takes longer to establish.",
+   "☐ List provided  ☐ None known"
+  ],
+  [
+   "A8",
+   "Which blockchain network? (Ethereum Mainnet / Testnet / L2 / Private)",
+   "Determines which known address registry entries apply.",
+   "Wrong network: mixer/bridge addresses will not match. False negatives in mixer detection.",
+   "Network: ________________"
+  ],
+  [
+   "SECTION B — INTERNAL CAPABILITY ASSESSMENT (Internal use only)",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "#",
+   "Check",
+   "Status",
+   "Detection Impact",
+   "Action Required"
+  ],
+  [
+   "B1",
+   "call_traces_raw available?",
+   "☐ Yes  ☐ No",
+   "If NO: Layer 1 structural heuristics unavailable. Most critical dependency.",
+   "If NO: Arrange Foundry simulation or archive node before proceeding."
+  ],
+  [
+   "B2",
+   "ABI decoded for all in-scope contracts?",
+   "☐ Yes  ☐ Partial  ☐ No",
+   "If NO/Partial: ABI-DEPENDENT signals fire incorrectly or not at all.",
+   "Run abi_extractor.py. Use OpenChain fallback. Document contracts with no ABI."
+  ],
+  [
+   "B3",
+   "Known address registry populated for this network?",
+   "☐ Yes  ☐ No",
+   "If NO: mixer_interaction_detected and bridge_interaction_detected will not fire.",
+   "Update Sheet 09 with network-specific addresses before running graph layer."
+  ],
+  [
+   "B4",
+   "Baseline data sufficient for anomaly detection (≥30 blocks)?",
+   "☐ Yes  ☐ No",
+   "If NO: Layer 2 anomaly signals will produce many false positives.",
+   "Run baseline computation on historical data first. Flag anomaly layer as beta."
+  ],
+  [
+   "B5",
+   "All 6 build phases (Sheet 08) completed in order?",
+   "☐ Yes  ☐ In Progress  ☐ No",
+   "Partial completion means some attack families have no coverage.",
+   "Follow Sheet 08 build order strictly. Do not enable correlator until Phases 1-5 complete."
+  ],
+  [
+   "SECTION C — EXPECTED OUTPUTS FOR THIS ENGAGEMENT",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   "C1",
+   "Attack detection records",
+   "Confirmed attack events with confidence score, evidence bundle, and recommended action",
+   "",
+   ""
+  ],
+  [
+   "C2",
+   "Fund flow map",
+   "BFS graph tracing stolen funds from attacker through intermediate addresses to mixer/bridge/exchange",
+   "",
+   ""
+  ],
+  [
+   "C3",
+   "Actor attribution report",
+   "Identified attacker addresses with cluster linkages and contract creator relationships",
+   "",
+   ""
+  ],
+  [
+   "C4",
+   "Signal log",
+   "All signals that fired during analysis period with timestamps and evidence references",
+   "",
+   ""
+  ],
+  [
+   "C5",
+   "False positive log",
+   "All signals filtered by fail-case rules — for client transparency",
+   "",
+   ""
+  ],
+  [
+   "C6",
+   "Chain of custody record",
+   "Cryptographic proof that evidence was not modified from ingestion to reporting",
+   "",
+   ""
+  ]
+ ]
+}

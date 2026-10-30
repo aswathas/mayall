@@ -1,0 +1,184 @@
+You are rebuilding the FORENSIC EVIDENCE COMPONENTS of "HELIX — Web3 Exploit Forensics Console", a Next.js 15 / React 19 / Tailwind v4 app.
+
+# READ FIRST — this is the contract, it wins over any habit
+C:\Users\aswat\Projects\w3-forensics\docs\design\RED-ROOM.md
+Read it completely before writing a single line. It defines the "Red Room"
+visual world (warm-black ground, arterial-red signal, bone chrome, two
+themes), the hard bans, the component APIs, the motion rules, the
+motion-graphics storyboard for the signature canvas piece, and the list of
+files that already exist.
+
+Then read:
+- packages/core/src/index.ts            (types: TraceNode, StorageWrite, BalanceDelta, PatternDetection, GasFlameNode, SimulationResult, Incident, Severity, Chain, AttackVectorId)
+- packages/core/src/incidents.ts         (INCIDENTS)
+- packages/forensic-engine/src/index.ts (SCENARIOS, ScenarioSpec)
+- packages/web/app/globals.css           (the token system and classes you must use)
+- packages/web/components/Panel.tsx, MetricStrip.tsx, SeverityChip.tsx, ChainChip.tsx, VectorChip.tsx (the primitives you must reuse)
+- packages/web/lib/format.ts, packages/web/lib/types.ts (existing helpers — reuse them, do not duplicate)
+
+# HARD FILE OWNERSHIP — you own EXACTLY these files, create/overwrite them
+packages/web/components/AttackReplay.tsx        (NEW — the canvas signature piece)
+packages/web/components/TraceViewer.tsx
+packages/web/components/GasFlameChart.tsx
+packages/web/components/StorageDiffInspector.tsx
+packages/web/components/PatternReport.tsx
+packages/web/components/BalanceTimeline.tsx
+packages/web/components/MermaidDiagram.tsx
+packages/web/components/LiveSimPanel.tsx
+packages/web/components/SimSummary.tsx
+packages/web/components/Loading.tsx
+packages/web/components/ReportView.tsx
+
+Do NOT touch: app/** pages, app/api/**, app/globals.css, app/layout.tsx,
+components/Panel.tsx, components/MetricStrip.tsx, components/ThemeToggle.tsx,
+components/SeverityChip.tsx, components/ChainChip.tsx, components/VectorChip.tsx,
+components/AppShell.tsx, components/IncidentTable.tsx, components/IncidentFilters.tsx,
+components/LossTimelineChart.tsx, components/ChainDonut.tsx, components/VectorBreakdown.tsx,
+components/SeveritySplit.tsx, components/EngineStatus.tsx, components/EvidencePipelineFigure.tsx,
+lib/**, packages/core/**, packages/forensic-engine/**, contracts/**, docs/**, scripts/**.
+Another agent owns those. Overwriting them will be treated as a failure.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics\packages\web
+The dev server is already running on http://localhost:3000 and will hot-reload.
+
+# WHAT TO BUILD
+
+## 1. AttackReplay.tsx — THE SIGNATURE MOTION PIECE (highest priority)
+A Canvas 2D motion graphic that replays a real exploit simulation, per
+section 10 of the contract. It is the centrepiece of the product.
+
+API:
+```tsx
+export interface AttackReplayProps {
+  trace: TraceNode | null;
+  artifact: SimulationArtifact | null;   // from @helix/core
+  /** ms; the piece length is 8000 */
+  durationMs?: number;
+  className?: string;
+  onComplete?: () => void;
+}
+export function AttackReplay(props: AttackReplayProps): JSX.Element;
+```
+Rules that are checked:
+- Every frame is a PURE FUNCTION of time. Implement `drawFrame(ctx, t, model)` as
+  an exported pure function so a single frame can be rendered deterministically.
+  No accumulating state, no per-frame counters, no unseeded Math.random().
+- The preview loop computes `t = (performance.now() - startRef) / 1000` and
+  calls drawFrame. That is the ONLY source of time.
+- `await document.fonts.ready` before the first frame.
+- Theme-aware: read colours from getComputedStyle(document.documentElement) at
+  draw time so the light theme renders correctly; re-read on theme change.
+- Storyboard exactly as written in the contract (5 shots, 8.0s, hold the final
+  frame 0.8s). Node size encodes gas share. The repeated function must visibly
+  spiral inward — that is the re-entrancy tell.
+- Seed any randomness (e.g. the tick positions along the value path) with a
+  small deterministic PRNG, fixed seed.
+- Respect prefers-reduced-motion: render the final frame statically, no rAF.
+- Include a replay control and a progress hairline.
+- Clean up the rAF loop and any listeners on unmount.
+
+## 2. TraceViewer.tsx
+Renders the `TraceNode` tree as an expandable call tree.
+- Rows show: depth indentation with a branch glyph (lucide `CornerDownRight` or a
+  drawn SVG line — NOT emoji), contract name, function, gas, and value.
+- Expand/collapse via the `.collapse` grid-rows technique (spatial continuity,
+  never animate a measured height).
+- Cheatcode frames (contract name `VM`) are dimmed and marked as harness
+  calls — they are not contract behaviour.
+- A node whose (contract, function) pair repeats deeper in the tree is the
+  re-entrancy tell: mark it with the arterial colour and a short label.
+- Show a "calls" counter per node. Keyboard accessible: buttons, not divs.
+
+## 3. GasFlameChart.tsx
+Horizontal proportional gas chart from `GasFlameNode[]` (recharts BarChart,
+layout="vertical"). Bars grow from 0 with a 30ms stagger (the `.grow-x`
+utility or a per-bar animationDelay). Labels use the mono face; the largest
+consumer is tinted with the arterial signal. Include a tooltip with the gas
+value and the share of the total.
+
+## 4. StorageDiffInspector.tsx
+Side-by-side before/after table for `StorageWrite[]`.
+- Columns: contract, label, slot (mono), before, after, kind.
+- Changed rows (`before !== after`) get the arterial highlight on the "after"
+  value and a subtle row tint; unchanged rows are muted.
+- Show the number of mutated slots as a summary line.
+- Copy-to-clipboard on a slot value (with a real button and aria-label).
+
+## 5. PatternReport.tsx
+Renders `PatternDetection[]`: label, confidence (as a hairline bar plus the
+percentage as text — never colour alone), severity chip, the rationale, and
+the evidence bullets.
+- Include the Mermaid attack-flow diagram via MermaidDiagram.
+- Sort by confidence descending.
+
+## 6. BalanceTimeline.tsx
+Renders `BalanceDelta[]` as before/after/delta with signed colouring
+(arterial for loss, mint for gain) and always the signed number as text.
+
+## 7. MermaidDiagram.tsx
+Client component that renders a mermaid string to SVG.
+- Dynamic `import('mermaid')` on the client only; initialise with the theme
+  colours; re-render when the theme changes.
+- Guard against invalid mermaid (try/catch → show the raw source in a mono
+  block instead of crashing).
+
+## 8. LiveSimPanel.tsx
+The live runner. Given a `scenarioId`:
+- POSTs `/api/simulate` with `{ scenarioId }`.
+- While running: a progress state with an elapsed timer, a live status line
+  ("executing forge test…" / "parsing trace…" / "classifying patterns…"), and a
+  live dot. Never a bare spinner with no words.
+- On success: renders AttackReplay at the top, then a tabbed evidence area —
+  Trace, Gas, Storage, Balances, Patterns, Raw (forge stdout/stderr in a mono
+  block with a copy button).
+- On error: names the problem and the recovery (e.g. "Foundry not found — run
+  npm run setup:foundry").
+- Also renders the report link and the forensic bundle download button
+  (`/api/bundle/lab-<scenarioId>?scenario=<scenarioId>`).
+- Accepts an `onResult` callback so a parent page can use the result too.
+
+## 9. SimSummary.tsx
+Compact summary of a finished simulation: scenario, vector chip, loss figure
+(arterial), duration, verdict, and the top pattern. Use the MetricStrip
+pattern — one band, not a card grid.
+
+## 10. Loading.tsx
+Skeleton loaders (not spinners) that match the real layout of what they stand
+in for, with `aria-busy="true"` and a visually hidden label.
+
+## 11. ReportView.tsx
+Renders a `ForensicReport` (from @helix/core): title/meta header, executive
+summary, each section as a styled block, pattern findings with confidence and
+evidence, the loss table, the Mermaid diagram, and a "Download forensic bundle"
+button pointing at `/api/bundle/<caseRef>?scenario=<scenarioId>`.
+- The report sections are numbered in the document (that is the report's own
+  convention and carries information) — but the page chrome around it must not
+  use decorative section numbers.
+
+# HARD RULES
+- Use the CSS variables from globals.css by name (bg-panel, text-ink, text-ink-dim,
+  text-ink-faint, text-arterial, text-ember, text-amber, text-mint, text-bone,
+  border-edge, font-mono, font-display…). NEVER write a raw hex in a component.
+- No emoji, no unicode glyphs as icons — lucide-react SVG only.
+- No nested panels.
+- No component may branch on the theme — tokens handle it.
+- Types must be correct; no `any` in exported props.
+- Every interactive element is a real <button>/<a>, keyboard reachable, with an
+  aria-label when it shows only an icon.
+
+# VERIFY BEFORE YOU FINISH
+1. `npx tsc --noEmit` in packages/web — ZERO errors from your files. (Errors in
+   files you do not own may belong to the other agents; ignore those but report them.)
+2. The dev server is running. Screenshot your work with:
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts <name> <route> 1600 1000`
+   Routes that exercise your components: /lab and /cases/curve-v2-reentrancy.
+   Look at the PNGs you produce and fix what they show. The lab page may not
+   exist yet (another agent owns it) — in that case build a temporary route
+   ONLY if you must, and remove it afterwards; otherwise verify via tsc.
+3. Confirm no console errors in the screenshot output.
+
+# DELIVERABLE (final message, max 30 lines, facts only)
+- Files created, with line counts.
+- `npx tsc --noEmit` result (pass/fail + any errors in your files).
+- Which shots you took and what they showed.
+- Any deviation from this brief, with the reason.

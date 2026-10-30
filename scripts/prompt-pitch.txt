@@ -1,0 +1,122 @@
+You are building the HACKATHON PITCH KIT for "Mayall — Web3 Exploit Forensics Console". The hackathon is tomorrow, so this must be immediately usable.
+
+# HARD FILE OWNERSHIP — you own EXACTLY these, create them
+docs/pitch/index.html          (the slide deck)
+docs/pitch/README.md           (how to present it)
+docs/pitch/speaker-notes.md    (word-for-word script, per slide, with timings)
+docs/pitch/one-pager.md        (a single-page summary a judge can read in 60 seconds)
+Do NOT modify anything else. The app is being edited by other agents right now.
+You may READ the app to get the facts right.
+
+# FACTS YOU MUST USE (verified — do not invent numbers)
+- The product is called **Mayall**. It is a forensic console for Web3 exploits.
+- It reproduces real attacks in a real EVM using the **Foundry** CLI (forge/anvil).
+- 6 attack scenarios ship as live local reproductions, each a deliberately
+  vulnerable Solidity contract plus a Foundry proof-of-concept:
+  reentrancy, oracle-manipulation, access-control, flash-loan, delegatecall,
+  selfdestruct.
+- Measured results from the local lab (these are REAL numbers from running the
+  PoCs — use exactly these, do not round up or invent new ones):
+    reentrancy            6 ETH   (Reentrancy detected, 97% confidence)
+    oracle-manipulation  40 ETH   (Oracle Manipulation, 90%)
+    access-control       50 ETH   (Access Control Failure, 82%)
+    flash-loan          250 ETH   (Oracle Manipulation, 90%)
+    delegatecall         50 ETH   (Delegate Call Injection, 93%)
+    selfdestruct         60 ETH   (Self Destruct / Forced Transfer, 92%)
+- The full suite of all 6 scenarios runs in about 1.3 seconds.
+- The incident registry holds 16 publicly reported Web3 exploit incidents across
+  5 chains, totalling roughly $2.39B in reported losses. 10 of the 16 have a
+  local reproduction.
+- 16 attack vectors are modelled in the taxonomy; 10 pattern detectors run over
+  every simulation (Reentrancy, Flash Loan, Oracle Manipulation, Access Control
+  Failure, Delegate Call Injection, Self Destruct, Arithmetic/Precision Fault,
+  Front Running, Bridge Verification Failure, Invariant/Logic Error).
+- The evidence captured per run: the full call tree (e.g. 83 nodes for the
+  reentrancy run, with the same `withdraw()` function invoked 7 times nested),
+  a storage diff (before/after slot values), balance deltas, a gas flame
+  proportional chart, and the pattern findings with evidence.
+- The forensic bundle exports as one ZIP containing the report (markdown +
+  JSON), the raw trace, the foundry stdout/stderr, storage-diff CSV,
+  balance-timeline CSV, timeline CSV, pattern findings, gas flame, and a
+  chain-of-custody manifest with SHA-256 hashes of every file.
+- The report's executive summary can be authored by MiniMax Code (the coding
+  agent) and injected into the generated report — a real AI-assisted forensic
+  write-up, stored and versioned per case.
+- The design language is called "Red Room": a forensic instrument in a dark lab.
+  Warm-black ground, one arterial red for data, bone-white chrome, mono type for
+  measurements. It also ships a light "paper room" theme.
+- IMPORTANT HONESTY: the chain state is LOCAL. Mayall does NOT fork mainnet and
+  does not claim to. The Solidity contracts, the EVM execution, the traces and
+  the detections are real; the funds are real test funds in a local simulation.
+  The deck must say this plainly — judges will ask.
+
+# WHAT TO BUILD
+
+## docs/pitch/index.html — THE DECK
+A self-contained slide deck. ONE html file, no build step, no external
+dependencies (no CDN, no webfonts — use system stacks with a mono fallback).
+It must open by double-click and work offline.
+
+Requirements:
+- 8 slides, sized 1280x720, scaled to fit any viewport (CSS transform scale on
+  a fixed-size stage).
+- Keyboard navigation: arrow keys, PageUp/PageDown, Space. Plus click zones and
+  a visible slide counter and progress rail.
+- Print to PDF must work: `@media print` lays each slide out one per page, in
+  the right colours (use `print-color-adjust: exact`).
+- The Red Room palette: ground #090607, panels #110b0d, hairlines #2b1a1e,
+  ink #f7eded, ink-dim #c3a7aa, arterial #ff3b30, ember #ff7a45, amber #f5b942,
+  mint #46d39a, bone #efe6e4. Mono for all data, a grotesque for headings.
+- Slide plan:
+  1. TITLE — "Mayall", one line on what it is, and the one thing it does that
+     explorers cannot: show the call-by-call reconstruction of an exploit.
+  2. THE PROBLEM — explorers show you that; incident responders need how.
+     Use the six vectors as a typographic list, not six cards.
+  3. THE DEMO — what the audience will see in the next 90 seconds, with the
+     click path (http://localhost:3000/lab → Run → watch the trace).
+  4. THE EVIDENCE — the reentrancy run: 83-node call tree, `withdraw()` invoked
+     7 times nested, 6 ETH drained, storage diff showing `totalWithdrawn` 0 → 6
+     ETH while the balance falls. This is the money slide — make the nested
+     repetition the visual.
+  5. THE DETECTORS — 10 pattern detectors, confidence + evidence, the two
+     weakest honest limitations (some detectors key off narrative keywords).
+  6. THE ARTEFACT — what comes out: the forensic bundle ZIP and the
+     chain-of-custody manifest. One spec-sheet block, not a grid of icons.
+  7. HONESTY SLIDE — what is real and what is simulated. State it plainly.
+  8. THE ASK / WHAT'S NEXT — what we would do with more time (mainnet fork
+     replay, more chains, ML-assisted triage).
+- Motion: one authored moment per slide transition (a subtle arterial wipe),
+  CSS-only, and fully disabled under `prefers-reduced-motion: reduce`.
+- No emoji as icons. Use inline SVG or drawn shapes only.
+- No lorem ipsum, no placeholder copy — every word is real.
+
+## docs/pitch/speaker-notes.md
+A word-for-word script with cumulative timings that total 6 minutes. Per slide:
+what you say, the exact click path, what to point at, and the question you
+expect ("is this real?" / "why not just use a fork?"). Include two fallback
+plans: (a) the forge run is slow on the venue laptop, (b) the network is down.
+
+## docs/pitch/one-pager.md
+A single page a judge can read in 60 seconds: what it is, the proof it is real,
+the numbers, how to run it locally (3 commands), and the honest limitation.
+
+## docs/pitch/README.md
+How to open the deck, how to present it (including the keyboard shortcuts and the
+print-to-PDF path), and the 30-second version if you only get 30 seconds.
+
+# VERIFY BEFORE YOU FINISH
+1. Open the deck in a headless browser and screenshot EVERY slide to confirm
+   nothing is clipped, off-screen or overlapping:
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts pitch docs/pitch/index.html 1280 720`
+   (shoot.ts only handles http URLs — if it cannot open a file:// URL, copy the
+   deck to packages/web/public/ temporarily, screenshot it via the dev server,
+   then remove the copy. Do not leave it behind.)
+2. Check every number against the FACTS list above. No invented figures.
+3. Confirm the deck works with the keyboard (you can dispatch key events from
+   the headless browser).
+
+# DELIVERABLE (final message, max 25 lines, facts only)
+- Files created with line counts.
+- The slides you screenshotted and any layout problem you found and fixed.
+- Confirmation that every figure matches the verified facts.
+- Anything a judge could reasonably challenge, so the speaker can pre-empt it.

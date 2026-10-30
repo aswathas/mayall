@@ -1,0 +1,180 @@
+# BRIEF — CUSTOM ATTACK LAB (real Foundry, live, configurable)
+
+You are one of several parallel agents working in the repo `C:\Users\aswat\Projects\w3-forensics`.
+The product is **Mayall** — a Web3 exploit forensics tool that runs REAL Foundry exploit simulations
+and produces forensic reports + evidence bundles.
+
+READ FIRST, IN THIS ORDER (do not skip):
+1. `docs/design/RED-ROOM.md`  — the authoritative UI/design contract. Every UI rule in it binds you.
+2. `packages/core/src/index.ts` — domain types, 16-vector taxonomy, `ATTACK_VECTORS`.
+3. `packages/forensic-engine/src/simulator.ts` — how a simulation is run today (forge invocation,
+   artifact JSON, freshness check, trace parsing, detector pass).
+4. `packages/forensic-engine/src/trace-parser.ts` and `detectors.ts` — reuse these, do not rewrite them.
+5. `packages/forensic-engine/src/report.ts` and `bundle.ts` — report + ZIP bundle builders to reuse.
+6. `contracts/test/ExploitBase.t.sol` — the shared Foundry harness that writes artifact JSON.
+7. `packages/web/app/api/_lib.ts` — the API conventions (Next route handlers, `engine()`, `errorResponse`).
+8. `packages/web/app/lab/page.tsx` and `packages/web/components/LiveSimPanel.tsx` — the existing lab UI.
+9. `packages/web/app/globals.css` — the token system. USE TOKENS ONLY. No raw hex in components.
+
+## YOUR EXCLUSIVE FILE OWNERSHIP (do not touch anything else — other agents own it)
+You own and may create/modify ONLY:
+- `contracts/src/CustomTarget.sol`
+- `contracts/src/CustomNoise.sol`
+- `contracts/test/CustomAttack.t.sol`
+- `packages/forensic-engine/src/custom.ts`
+- `packages/web/app/api/custom/route.ts`
+- `packages/web/app/api/custom/stream/route.ts`
+- `packages/web/app/api/custom/options/route.ts`
+- `packages/web/app/attack-lab/page.tsx`
+- `packages/web/app/attack-lab/loading.tsx`
+- `packages/web/components/AttackLab*.tsx`
+- `packages/web/components/LiveTrace*.tsx`
+- `packages/web/components/Custom*.tsx`
+- `scripts/mayall-custom.ts`
+- `docs/attack-lab.md`
+
+DO NOT edit: `packages/web/app/page.tsx`, `packages/web/components/AppShell.tsx`, `packages/web/app/globals.css`,
+`packages/web/app/api/_lib.ts`, `packages/forensic-engine/src/{simulator,trace-parser,detectors,report,bundle,foundry}.ts`,
+`packages/core/**`, `packages/cli/**`, `contracts/src/Session*.sol`, `contracts/test/LongSession.t.sol`,
+anything under `packages/web/app/bible/**`, `packages/web/app/showcase/**`, `packages/web/components/Bible*.tsx`,
+`packages/web/components/Showcase*.tsx`, `docs/pitch/**`, `packages/web/tests/**`, `scripts/qa/**`.
+If you need a change in a forbidden file, do NOT make it — note it in your final report instead.
+
+## WHAT TO BUILD
+
+### 1. A REAL, PARAMETERISED Foundry attack (the core of this brief)
+`contracts/src/CustomTarget.sol` — a deliberately vulnerable vault that supports the attack families
+that make sense in one contract:
+  - reentrancy (withdraw sends ETH before zeroing the balance)
+  - access control (an `owner`-gated `drain()` with a predictable/compromisable owner, plus a
+    `tx.origin` style flaw)
+  - oracle manipulation (a price oracle that trusts an LP-reserve-derived spot price with no TWAP)
+  - flash loan (borrow/settle in one transaction, no economic check)
+  - delegatecall injection (a proxy pointing at an attacker-controlled implementation)
+  - selfdestruct (a destroyable target whose funds go to the attacker)
+Keep ONE contract with switchable behaviour driven by an enum, so a single Foundry test can simulate
+every family against it. Add `contracts/src/CustomNoise.sol` — benign traffic contracts used to pad a
+session with realistic noise transactions so the trace has depth.
+
+`contracts/test/CustomAttack.t.sol` — ONE Foundry test named `testCustomAttack` that:
+  - reads its configuration from environment variables so the same test binary can be re-run with
+    different parameters:
+      `MAYALL_VECTOR`   (one of: reentrancy, access-control, oracle-manipulation, flash-loan, delegatecall, selfdestruct)
+      `MAYALL_TXS`      (integer, number of attacker transactions to execute — default 3)
+      `MAYALL_AMOUNT`   (integer, total wei to drain — default 6 ether)
+      `MAYALL_SEED`     (integer, noise seed — default 1)
+    Use `vm.envOr("MAYALL_VECTOR", string("reentrancy"))` etc. so the test still runs with no env set.
+  - executes `MAYALL_TXS` attack transactions (loop) against the target, interleaving benign noise
+    activity so the trace has multiple top-level calls, and asserts a REAL invariant, e.g.
+    `attackerGain == expectedDrain` and `targetDeficit > 0`. The assertion must be a genuine
+    property of the scenario, not a tautology.
+  - writes the same artifact JSON shape that `ExploitBase.t.sol` writes (read that file and reuse its
+    builder helpers — import from `test/ExploitBase.t.sol`), into the artifact directory so the
+    TypeScript engine can read it. Use the same env var the existing harness uses for the output
+    directory (read `ExploitBase.t.sol` to find it; if it is not env-driven, use
+    `vm.envOr("HELIX_ARTIFACT_DIR", string("./artifacts"))` semantics and make the path match what
+    `packages/forensic-engine/src/foundry.ts` expects).
+  - MUST PASS. Verify by running forge yourself (see the Foundry invocation below).
+
+### 2. Engine support: `packages/forensic-engine/src/custom.ts`
+Export something like:
+```ts
+export interface CustomAttackRequest {
+  vector: string;        // reentrancy | access-control | oracle-manipulation | flash-loan | delegatecall | selfdestruct
+  txs: number;           // 1..12
+  amountWei: bigint;     // total wei drained
+  seed?: number;
+}
+export interface CustomAttackResult { artifact; trace; detections; report; bundlePath; ... }
+export async function runCustomAttack(req, opts?): Promise<CustomAttackResult>
+```
+It must: invoke forge with the env vars set, read the artifact JSON, parse the trace with the EXISTING
+trace-parser, run the EXISTING detectors, build the report with the EXISTING report builder, and build
+the ZIP bundle with the EXISTING bundle builder. Reuse `foundry.ts`'s `runTool`/`repoRoot` helpers.
+Also export a `CUSTOM_VECTORS` catalogue (id, label, family, description, what it drains) that the API
+and UI both consume — derive the families from `packages/core/src/index.ts` `ATTACK_VECTORS` and from
+the attack-pattern catalog in `data/bible/forensic-bible.json` (sheet `04 Attack Pattern Catalog`).
+
+### 3. API routes
+- `GET  /api/custom/options` → the vector catalogue + parameter bounds + the toolchain status.
+- `POST /api/custom` → body `{ vector, txs, amountWei, seed }`; runs the simulation and returns
+  `{ caseId, artifact, detections, report, traceSummary, bundleUrl }`. `caseId` should be
+  `custom-<vector>-<timestamp>`; the artifact/report should be persisted under the artifact dir so the
+  report route and bundle route can serve it by id. Keep it consistent with how `/api/simulate` and
+  `/api/report/[caseId]` already work — read those files first and follow the same conventions.
+- `GET  /api/custom/stream?vector=&txs=&amountWei=&seed=` → **Server-Sent Events**. This is the LIVE
+  RUN. It must spawn `forge test --match-path test/CustomAttack.t.sol --match-test testCustomAttack -vvvv`
+  as a child process, pipe stdout LINE BY LINE, and push each line to the client as an SSE `data:` event
+  (plus periodic `progress` events with the current forge output). It must emit a terminal `done` event
+  with the caseId and the bundle/report URLs, and an `error` event on failure. Set
+  `export const dynamic = 'force-dynamic'` and `export const runtime = 'nodejs'`.
+
+### 4. UI: `packages/web/app/attack-lab/page.tsx` — "Custom Attack Lab"
+This is a flagship page. It must feel like an instrument, not a form.
+Layout (obey RED-ROOM.md):
+- A control column (Panel) with:
+  - attack family / vector picker — a real control (buttons or a styled select), each option showing
+    the family, what it drains, and the trust assumption it breaks
+  - number of attacker transactions: a stepper/slider, 1..12
+  - total amount to drain: a numeric input in ETH with a unit toggle
+  - seed input
+  - a RUN button (`.btn-signal` or `.btn-primary`), disabled while running
+  - a note stating plainly: "Local Foundry simulation. Not mainnet evidence."
+- A LIVE trace panel that renders the SSE stream as it arrives: the raw forge lines appear
+  progressively in a monospace stream, AND a parsed call-tree grows node by node as depth is detected.
+  Motion must be tasteful and respect `prefers-reduced-motion`.
+- When the run completes, reveal the results IN PLACE (no page reload): detector findings with
+  confidence, the trace tree, gas flame, storage diff, balance timeline, the AI narrative (if present),
+  a "Download forensic bundle" link to `/api/bundle/<caseId>`, and a link to the case page.
+- Also add a "presets" row: one-click presets for the six families at their default amounts, so a
+  judge can hit one button and see a full run.
+- If you need a chart/component that already exists (`TraceViewer`, `GasFlameChart`,
+  `StorageDiffInspector`, `BalanceTimeline`, `PatternReport`, `MermaidDiagram`, `SimSummary`,
+  `Panel`, `MetricStrip`, `EmptyState`), IMPORT and reuse it — do not re-implement it. Read their
+  props before using them. NOTE: several of those files are owned by other agents and may change;
+  only import them, never edit them.
+- The page must be dark-theme-first and also correct in light theme. Use the `--hx-*` CSS variables
+  (and the Tailwind classes that map to them) — read `globals.css` to learn the exact names.
+
+### 5. CLI entry: `scripts/mayall-custom.ts`
+A standalone script runnable as `npx tsx scripts/mayall-custom.ts --vector reentrancy --txs 3 --amount 6 --out artifacts/custom`
+that runs the same engine path, prints a compact console table of the findings, writes the bundle and
+the markdown report to the `--out` folder, and prints the absolute paths. Make it usable from the
+repo root.
+
+## HARD CONSTRAINTS
+- The Foundry toolchain lives at `C:\Users\aswat\Projects\w3-forensics\.tools\foundry`. NEVER modify
+  the system PATH. In PowerShell prefix commands with:
+  `$env:PATH = "C:\Users\aswat\Projects\w3-forensics\.tools\foundry;$env:PATH"`
+- Foundry runs from `C:\Users\aswat\Projects\w3-forensics\contracts`.
+- `contracts/foundry.toml` already has `solc 0.8.20`, `via_ir = true`, `evm_version = "cancun"`.
+  You may add to it ONLY if necessary; do not change existing solver settings.
+- Do NOT `npm install` anything new. Do not add dependencies. Use `lucide-react` icons only (already
+  installed). No emoji anywhere in the UI. No raw hex colours in components — tokens only.
+- `rm` is policy-gated on this machine. If you must remove a file you created, overwrite it in place
+  instead of deleting.
+- TypeScript must compile. Verify with `npx tsc --noEmit` from `packages/web` (and the repo root if
+  there is a root tsconfig) and fix every error in files you own.
+- Honesty is mandatory in all copy: these are LOCAL Foundry simulations. Detectors are heuristic.
+  Never imply mainnet replay or real-funds evidence.
+
+## VERIFICATION (you must do all of this before you finish)
+1. `$env:PATH = "C:\Users\aswat\Projects\w3-forensics\.tools\foundry;$env:PATH"`
+   `cd C:\Users\aswat\Projects\w3-forensics\contracts`
+   `forge build`
+   `forge test --match-path test/CustomAttack.t.sol --match-test testCustomAttack -vvvv`
+   → must PASS. Also run it once with env vars set, e.g.
+   `$env:MAYALL_VECTOR='reentrancy'; $env:MAYALL_TXS='3'; $env:MAYALL_AMOUNT='6000000000000000000'`
+   and confirm the trace changes shape.
+2. From the repo root: `npx tsx scripts/mayall-custom.ts --vector reentrancy --txs 3 --amount 6`
+   → must produce a report + bundle and print findings.
+3. `npx tsc --noEmit` — zero errors in your files.
+4. Make sure the dev server on http://localhost:3000 can serve the new page: check that
+   `packages/web/app/attack-lab/page.tsx` compiles and that the API routes exist. If the dev server
+   needs the route to be present, it will hot-reload.
+5. Write `docs/attack-lab.md` — a real document: what the lab does, the parameters, the underlying
+   contract, how the trace is parsed, how detections are derived, and the honest limitations.
+
+Work autonomously. Do not ask questions. Do not stop early. When everything above is verified, finish
+with a short report: files created, the measured numbers from your test runs, and anything you could
+not complete.

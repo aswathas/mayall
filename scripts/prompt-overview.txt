@@ -1,0 +1,145 @@
+You are rebuilding the OVERVIEW DASHBOARD and the INCIDENT REGISTRY of "HELIX — Web3 Exploit Forensics Console", a Next.js 15 (App Router) / React 19 / Tailwind v4 app.
+
+# READ FIRST — this is the contract, it wins over any habit
+C:\Users\aswat\Projects\w3-forensics\docs\design\RED-ROOM.md
+Read it completely before writing a single line. It defines the "Red Room"
+visual world, the hard bans (no kicker above a heading, no hero-metric card
+grid, no nested panels, no gradient text, no emoji icons, tokens only), the
+component APIs, the two themes (dark "red room" / light "paper room"), and the
+motion rules.
+
+Then read:
+- packages/core/src/index.ts     (types: Incident, AttackVectorId, Severity, Chain, ATTACK_VECTORS, SEVERITY_COLORS, CHAIN_COLORS)
+- packages/core/src/incidents.ts  (the 16 seeded incidents)
+- packages/web/app/globals.css    (the token system and the classes you must use)
+- packages/web/components/Panel.tsx, MetricStrip.tsx, SeverityChip.tsx, ChainChip.tsx, VectorChip.tsx (the primitives you must reuse)
+- packages/web/lib/format.ts, packages/web/lib/types.ts (existing helpers — reuse them)
+- packages/web/app/api/overview/route.ts and packages/web/app/api/incidents/route.ts (the exact response shapes)
+
+# HARD FILE OWNERSHIP — you own EXACTLY these files
+packages/web/app/page.tsx
+packages/web/app/incidents/page.tsx
+packages/web/components/IncidentTable.tsx
+packages/web/components/IncidentFilters.tsx
+packages/web/components/LossTimelineChart.tsx
+packages/web/components/ChainDonut.tsx
+packages/web/components/VectorBreakdown.tsx
+packages/web/components/SeveritySplit.tsx
+packages/web/components/EngineStatus.tsx
+
+Do NOT touch anything else — not components/AttackReplay.tsx, TraceViewer.tsx,
+GasFlameChart.tsx, StorageDiffInspector.tsx, PatternReport.tsx, BalanceTimeline.tsx,
+MermaidDiagram.tsx, LiveSimPanel.tsx, SimSummary.tsx, Loading.tsx, ReportView.tsx,
+not Panel.tsx / MetricStrip.tsx / ThemeToggle.tsx / the chips / AppShell.tsx /
+EvidencePipelineFigure.tsx, not app/api/**, not app/globals.css, not app/layout.tsx,
+not app/lab/**, not app/cases/**, not app/docs/**, not lib/**, not packages/core/**,
+not contracts/**, not docs/**, not scripts/**. Another agent owns those.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics\packages\web
+The dev server is already running on http://localhost:3000 and hot-reloads.
+
+# WHAT THE API GIVES YOU
+GET /api/overview ->
+{ totals: { incidents, lossUsd, reproducible, chains, vectors },
+  byVector: { id, label, count, lossUsd }[],
+  byChain: { chain, count, lossUsd }[],
+  timeline: { month, lossUsd, count }[],
+  severity: { severity, count }[],
+  topIncidents: Incident[] }
+GET /api/incidents -> Incident[]
+GET /api/status -> { foundry, scenarios, artifacts, version }
+
+# WHAT TO BUILD
+
+## app/page.tsx — THE OVERVIEW
+This is the first screen a judge sees. It must look like an instrument, not a
+SaaS template.
+
+Structure (top to bottom):
+1. **Page head.** A real `<h1>` with the page's purpose in words — e.g.
+   "Exploit landscape". NO kicker/eyebrow above it (banned). Beside it, a
+   short sentence of orientation (max 75ch). On the right, two actions:
+   "Registry" (ghost) and "Live lab" (primary).
+2. **MetricStrip** (from components/MetricStrip.tsx) — ONE band with the five
+   headline numbers: tracked loss, incidents, reproducible cases, chains
+   covered, distinct attack vectors. Do NOT use StatCard or a card grid.
+   Values are strings you format (e.g. `$2.39B`).
+3. **Two-column instrument row.** Left (2/3): the loss timeline chart. Right
+   (1/3): the live-engine panel.
+   - LossTimelineChart: monthly loss as an area chart (recharts). Use a subtle
+     arterial gradient fill (this is data, so colour is allowed — but no
+     decorative gradients elsewhere). Axis labels in the mono face, ink-dim.
+     Tooltip shows the month and the exact loss.
+   - EngineStatus: reads /api/status. Shows the Foundry state as a word
+     ("Engine online" / "Foundry not installed") plus the scenario and
+     artifact counts. A live dot (mint) when online. If Foundry is missing,
+     give the recovery: "Run npm run setup:foundry". This panel must be
+     compact — it is a status readout, not a marketing block.
+4. **Attack vector breakdown + chain distribution.** VectorBreakdown renders
+   `byVector` as a ranked list: the vector label, its count and its share of
+   total loss, with a proportional bar. Vector chips carry the severity
+   weighting. ChainDonut renders `byChain` as a donut with CHAIN_COLORS and a
+   legend that shows the loss per chain.
+5. **Severity split + top incidents.** SeveritySplit renders `severity` as a
+   single stacked bar with a text legend (never colour alone). The top-incidents
+   table (IncidentTable) lists name, target, chain, severity chip, loss, date
+   and a "REPRO" badge when `incident.reproducible` — linking to
+   `/cases/<slug>`.
+6. **A closing line that is honest.** State that the incidents are public
+   disclosures and that the reproductions are local Foundry simulations. No
+   marketing claims.
+
+The page must fill its space properly: no large empty regions, no section
+pushed to one side, equal margins. Use a 12-column grid with explicit spans.
+
+## app/incidents/page.tsx — THE REGISTRY
+A working filter/sort table, not a static list.
+- Filters (all reflected in the URL query string so the view is shareable):
+  free-text search over name and target, chain filter, attack-vector filter,
+  and a sort control (loss desc, loss asc, date desc, date asc).
+- The filter state lives in `useSearchParams`; update with `router.replace`.
+- Show the active filter count and a "clear" action.
+- Use `.data-table` for the table: sticky header, hairline row rules, hover.
+- Empty state: say what would appear here and how to make it appear
+  ("No incident matches these filters — clear one to widen the search").
+- Mobile: the table becomes stacked cards below 768px (do not let it scroll
+  horizontally).
+
+## Components
+- IncidentTable: takes `incidents: Incident[]`, renders the rows, links each
+  row to `/cases/<slug>`. Props: `{ incidents, dense?: boolean }`.
+- IncidentFilters: `{ search, chain, vector, sort, onChange }` — controlled.
+  Use real <select>/<input> elements with visible labels (not placeholder-only).
+- LossTimelineChart: `{ data: { month: string; lossUsd: number; count: number }[] }`
+- ChainDonut: `{ data: { chain: Chain; count: number; lossUsd: number }[] }`
+- VectorBreakdown: `{ data: { id: AttackVectorId; label: string; count: number; lossUsd: number }[] }`
+- SeveritySplit: `{ data: { severity: Severity; count: number }[] }`
+- EngineStatus: no props (fetches /api/status itself).
+
+# HARD RULES
+- Use the CSS variables from globals.css by name (bg-panel, text-ink,
+  text-ink-dim, text-ink-faint, text-arterial, text-ember, text-amber,
+  text-mint, border-edge, font-mono, font-display…). NEVER a raw hex.
+- Never nest a Panel inside a Panel. Use `.rule` or a labelled sub-block.
+- No emoji or unicode glyphs as icons — lucide-react SVG only.
+- No component may branch on the theme.
+- Numbers that can change get `tabular-nums` (the `.num` / `.mono` utilities).
+- Loading = skeletons, not spinners. Error = names the problem and the recovery.
+- Accessibility: aria-labels on icon-only controls, real buttons, visible focus,
+  charts have a legend or an accompanying text value.
+
+# VERIFY BEFORE YOU FINISH
+1. `npx tsc --noEmit` in packages/web — ZERO errors from your files.
+2. Screenshot and LOOK at your work:
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts overview / 1600 1000`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts registry /incidents 1600 1000`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts overview-mobile / 390 900`
+   Fix what the screenshots show: empty regions, misalignment, overflow,
+   clipped text, console errors. Iterate until it is right.
+3. Confirm no console errors in the screenshot output.
+
+# DELIVERABLE (final message, max 30 lines, facts only)
+- Files created/rewritten with line counts.
+- `npx tsc --noEmit` result.
+- The screenshots you took and what they revealed.
+- Any deviation from this brief, with the reason.

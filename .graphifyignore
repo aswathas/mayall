@@ -1,0 +1,3 @@
+# Skill libraries are tooling, not product surface — keep them out of the product graph.
+.agents/
+.claude/

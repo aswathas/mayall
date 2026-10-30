@@ -1,0 +1,182 @@
+# BRIEF — PUBLISH MAYALL TO GITHUB + GITHUB PAGES (public judge-facing site)
+
+You are one of several parallel agents in `C:\Users\aswat\Projects\w3-forensics`.
+The product is **Mayall** — a Web3 exploit forensics tool. The repo is NOT yet a git repository.
+
+Your job: publish it — source on GitHub, plus a live public site on GitHub Pages that a hackathon
+judge can open in a browser.
+
+## READ FIRST
+1. `README.md`, `docs/design/RED-ROOM.md` — what the product is and how it must present itself.
+2. `packages/web/next.config.*` — the current Next config (read it, do not guess the filename).
+3. `packages/web/app/api/**` — the API layer. READ the route files and note which are GET vs POST.
+4. `packages/web/app/layout.tsx`, `packages/web/app/globals.css` — shell and tokens.
+5. `packages/web/package.json`, the root `package.json` — workspaces and scripts.
+6. `packages/forensic-engine/src/foundry.ts` — how the repo root is discovered (`repoRoot()`).
+
+## THE SITUATION
+- `gh` is authenticated as `aswathas` (token scopes: gist, read:org, repo, workflow).
+- No Vercel / Cloudflare / Netlify credentials exist. **GitHub is the only deployment target.**
+- GitHub Pages serves static files only, but Next.js can emit a static export in which GET route
+  handlers are pre-rendered into static JSON. That is the mechanism to use.
+- The site must work at `https://aswathas.github.io/mayall/`.
+
+## TARGET REPOSITORY
+- Name: **`mayall`** under owner **`aswathas`**.
+- Visibility: **public** (this is a hackathon showcase; judges must be able to open it).
+- Default branch: `main`.
+- If a repo named `mayall` already exists for that owner, do NOT overwrite it — report back
+  instead and use a different name only after confirming with the instructions below.
+
+## YOUR EXCLUSIVE FILE OWNERSHIP
+You own and may create/modify ONLY:
+- `packages/web/next.config.mjs` (or whatever the config file is named — you may add the static-export
+  branch, but you MUST NOT change the existing behaviour of the dev server)
+- `scripts/build-static.mjs` (new)
+- `.github/workflows/deploy.yml` (new)
+- `.github/workflows/ci.yml` (new — optional but good)
+- `docs/deployment.md` (new)
+- `static-export/**` (the exported output, if you keep it in the tree)
+- `README.md` (you may ADD a "Deploy" / "Live site" section; do not rewrite existing content)
+
+DO NOT edit: `packages/web/app/**`, `packages/web/components/**`, `packages/web/app/globals.css`,
+`packages/core/**`, `packages/forensic-engine/src/**`, `packages/cli/**`, `contracts/**`, `data/**`,
+`docs/**` other than `docs/deployment.md`, `packages/web/tests/**`, `scripts/qa/**`.
+Other agents are actively editing those files RIGHT NOW — do not touch them, do not revert them.
+
+`rm`/delete is POLICY-GATED on this machine. Never delete a tracked file. If you need to remove a
+route from a build, RENAME it out of the way (e.g. `route.ts` → `route.ts.off`) and rename it back
+afterwards. Do not use `Remove-Item` on repo files.
+
+## WHAT TO BUILD
+
+### 1. A static-export build path
+Add to the Next config an env-gated branch, e.g.:
+```js
+const isStatic = process.env.MAYALL_STATIC_EXPORT === '1';
+// isStatic -> output: 'export', trailingSlash: true,
+//              images: { unoptimized: true },
+//              basePath: process.env.MAYALL_BASE_PATH ?? '',
+//              assetPrefix: isStatic ? `${basePath}/` : ''
+```
+Read the existing config first and preserve everything it already sets. The dev server
+(`npm run dev`) must keep working EXACTLY as before when the env var is unset.
+
+Then write `scripts/build-static.mjs` that:
+  1. Reads `packages/web/app/api/**` and identifies the route handlers that CANNOT be statically
+     exported (any handler exporting `POST`/`PUT`/`PATCH`/`DELETE` — e.g. `/api/simulate`,
+     `/api/simulate/all`, `/api/custom` POST, `/api/custom/stream`). Next's static export only
+     supports `GET`.
+  2. Renames those `route.ts` files to `route.ts.off` (a plain rename — recoverable, and you MUST
+     restore them in a `finally` block so an interrupted build never leaves the repo broken).
+  3. Runs the export build with `MAYALL_STATIC_EXPORT=1` and `MAYALL_BASE_PATH=/mayall`.
+  4. Restores every renamed file.
+  5. Copies the exported site into `static-export/` at the repo root.
+- The GET route handlers must become static JSON at build time. If any GET route uses
+  `export const dynamic = 'force-dynamic'`, that is a problem for the export — report it and work
+  around it WITHOUT editing the route file if you can (e.g. by setting the env var the route reads).
+  If you genuinely must edit one GET route to make it exportable, you may do so — but ONLY that
+  change, and record it in your final report.
+- Build from the repo root so the npm workspaces resolve `@helix/core` and `@helix/forensic-engine`.
+- Verify the export: `static-export/` must contain `index.html`, the route folders, and the
+  pre-rendered `/api/...` JSON files. Confirm at least one API JSON file exists and is valid JSON.
+- If a page cannot be statically exported because it depends on a POST-only route, make that page
+  degrade GRACEFULLY (a clear, styled "run this locally" state) rather than failing the build.
+
+### 2. A GitHub Actions workflow that deploys to Pages
+`.github/workflows/deploy.yml`:
+  - Triggers: `on: push` to `main`, plus `workflow_dispatch`.
+  - `permissions: contents: read, pages: write, id-token: write`.
+  - Jobs: `build` (checkout → setup-node 22 → `npm ci` → `npm run typecheck` → `npm run build:static`
+    → upload artifact with `actions/upload-pages-artifact@v3`) → `deploy` (needs `build`,
+    `environment: { name: github-pages, url: ${{ steps.deployment.outputs.page_url }} }`,
+    `actions/deploy-pages@v4`).
+  - Add `concurrency: { group: pages, cancel-in-progress: false }`.
+  - Because the product is a Foundry project, also add a `.github/workflows/ci.yml` that installs
+    Foundry (`foundry-rs/foundry-toolchain@v1`), runs `forge build` and `forge test` in `contracts/`,
+    runs `npm run typecheck`, and runs `npx tsx scripts/verify-pipeline.ts` — so the GitHub page
+    shows the forensic pipeline actually passing in CI. Make the CI badge-able and add the badge to
+    `README.md` (you may ADD to README).
+  - `npm ci` needs a lockfile — the root has `package-lock.json`. Verify it is present and current;
+    if `npm ci` fails because of drift, use `npm install --no-audit --no-fund` and commit the
+    updated lockfile.
+  - The workflow must NOT require any secret beyond what GitHub provides. There is no `MINIMAX_API_KEY`
+    in this environment — the AI narrative layer falls back to its deterministic generator in CI, and
+    that is fine and must be stated in the workflow output.
+
+### 3. Create and push the repository
+- `git init` in `C:\Users\aswat\Projects\w3-forensics`, branch `main`.
+- **CRITICAL — commit identity.** The runtime injects `GIT_AUTHOR_NAME=Claude`. You MUST override
+  it on EVERY commit so authorship is correct. Prepend these four environment variables to the
+  commit command:
+  ```
+  GIT_AUTHOR_NAME="aswathas"
+  GIT_AUTHOR_EMAIL="46263167+aswathas@users.noreply.github.com"
+  GIT_COMMITTER_NAME="aswathas"
+  GIT_COMMITTER_EMAIL="46263167+aswathas@users.noreply.github.com"
+  ```
+  After the commit, verify with `git log -1 --format='%an <%ae>'` — it MUST show
+  `aswathas <46263167+aswathas@users.noreply.github.com>`. If it shows anything else, amend with
+  `--amend --reset-author --no-edit` and the same env block.
+- Set `git config core.autocrlf false` to avoid CRLF churn on Windows, and add a `.gitattributes`
+  with `* text=auto eol=lf` for source files.
+- Create the remote with `gh repo create aswathas/mayall --public --source . --remote origin
+  --description "Mayall — Web3 exploit forensics: real Foundry simulations, heuristic detectors, forensic reports and evidence bundles"` then `git push -u origin main`.
+- If the repo already exists, use `gh repo view aswathas/mayall` to confirm and then just add the
+  remote and push.
+
+### 4. Enable Pages and verify the live URL
+- Set the Pages source to "GitHub Actions" via the API:
+  `gh api --method PUT repos/aswathas/mayall/pages -f build_type=workflow`
+  (If that scope is rejected, try `gh api --method POST repos/aswathas/mayall/pages -f ...`; if the
+  Pages API is unavailable to this token, fall back to pushing a `.nojekyll` file plus the exported
+  site to a `gh-pages` branch and report that fallback.)
+- Watch the workflow: `gh run watch` / `gh run list --repo aswathas/mayall`.
+- The final live URL should be `https://aswathas.github.io/mayall/`.
+- **VERIFY IT ACTUALLY SERVES THE SITE**: fetch it with
+  `Invoke-WebRequest https://aswathas.github.io/mayall/ -UseBasicParsing` and confirm status 200 and
+  that the HTML contains "Mayall". Also fetch one deep route, e.g.
+  `https://aswathas.github.io/mayall/incidents/`, and one pre-rendered API file,
+  `https://aswathas.github.io/mayall/api/incidents.json` (or whatever path the export produced for
+  it — check the export output). Report the real status codes.
+- If Pages will not serve, the SOURCE repo on GitHub is still the primary deliverable — make sure
+  the push succeeded and report the repo URL either way.
+
+### 5. `docs/deployment.md`
+A real document: how the repo is published, what the static export does and does NOT include (the
+live Foundry simulation is local-only by design — say so plainly, because the site must never imply
+a server-side forge), how to run the whole thing locally from a clone (the exact commands), how to
+run the CLI one-liner, and the CI story.
+
+## HONESTY REQUIREMENTS (non-negotiable)
+- The site must state that chain state is LOCAL and the simulations are not mainnet evidence.
+  This matters on the deployed public site more than anywhere else.
+- The AI narrative layer uses the local `mcode` CLI when available and a deterministic fallback
+  otherwise. Never describe the fallback as an AI report.
+- Do not remove or weaken the "not mainnet evidence" wording to make the site look better.
+
+## HARD CONSTRAINTS
+- Do NOT `npm install` new dependencies beyond what the workflows need (none should be needed —
+  `actions/upload-pages-artifact` and `actions/deploy-pages` are Actions, not npm packages).
+- `rm` is policy-gated — never delete a tracked file; rename out of the way and rename back.
+- Other agents are editing `packages/web/app/**`, `packages/core/**`, `packages/forensic-engine/**`
+  and `packages/cli/**` RIGHT NOW. Your `git add -A` will pick up their in-flight work. That is
+  expected and acceptable — but do NOT try to fix, revert, or "clean up" anything you find there.
+- Never commit `node_modules/`, `.next/`, `.tools/`, `artifacts/` (except small committed evidence if
+  you decide to include it), `graphify-out/`, `.env*`, or any credential. The `.gitignore` already
+  covers most of these — VERIFY it and extend it if a gap exists.
+- Secrets: there are none in this repo. Do not add any.
+
+## VERIFICATION (all of it, before you finish)
+1. `git log -1 --format='%an <%ae>'` shows `aswathas <46263167+aswathas@users.noreply.github.com>`.
+2. `git status` is clean (everything committed) and `git push` reported success.
+3. `gh repo view aswathas/mayall --json url,visibility` shows the expected URL and `PUBLIC`.
+4. The Pages workflow completed: `gh run list --repo aswathas/mayall` shows a successful run.
+5. `Invoke-WebRequest https://aswathas.github.io/mayall/` → 200 and contains "Mayall".
+6. The local static export produced `static-export/index.html` and at least one pre-rendered API JSON.
+7. `npm run typecheck` still passes.
+8. `docs/deployment.md` written.
+
+Work autonomously. Do not ask questions. Do not stop early. Finish with a short report: the repo
+URL, the live site URL (or why it failed), the real HTTP status codes you observed, the git author
+verification line, and anything you could not complete.

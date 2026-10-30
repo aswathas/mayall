@@ -1,0 +1,214 @@
+# BRIEF — LIVE CASE: THE BINANCE $6.3B BREACH + MAYALL'S ANALYSIS
+
+You are one of several parallel agents in `C:\Users\aswat\Projects\w3-forensics`.
+The product is **Mayall** — a Web3 exploit forensics tool that runs REAL Foundry exploit simulations,
+parses the real `forge -vvvv` call trace, runs 10 heuristic detectors, and emits a forensic report
+plus an evidence bundle with a SHA-256 chain of custody.
+
+This brief adds the product's flagship **live case**: the $6.3 billion Binance breach of 29–30
+October 2026 — the largest crypto theft in history — analysed with Mayall's own rule set and the
+Forensic Bible, and shown on a dedicated page with a live tracker.
+
+READ FIRST:
+1. `docs/design/RED-ROOM.md` — the authoritative design contract. Every rule binds you.
+2. `packages/core/src/index.ts` — types, 16-vector taxonomy, `ATTACK_VECTORS`, `resolveAttackVectorId()`.
+3. `packages/core/src/incidents.ts` — the 16-incident registry. MATCH ITS SHAPE EXACTLY.
+4. `packages/forensic-engine/src/detectors.ts` — the 10 detectors and `DETECTOR_CATALOG`
+   (`looksFor`, `emits`, `limitation` — read every `limitation`, your copy must not overstate).
+5. `packages/forensic-engine/src/report.ts` — the 7-section report builder, `saveNarrative` /
+   `loadNarrative` (`data/narratives/<caseId>.md`), `reportToMarkdown`.
+6. `packages/forensic-engine/src/aireport.ts` — if it exists, the mcode-paired AI report generator.
+   If not, `packages/forensic-engine/src/historical.ts` for the pattern.
+7. `data/bible/forensic-bible.json` — the REAL Forensic Bible (14 sheets). Sheet
+   `04 Attack Pattern Catalog` has 37 attack patterns in 8 families; sheet `03 Detection Signals`
+   has 54 signals with thresholds, prerequisites and confidence weights; sheet
+   `05 Signal → Attack Mapping`; sheet `10 Real World Walkthroughs`; sheet `13 Client Checklist`.
+   THIS IS THE REFERENCE FOR MAPPING. Match pattern and signal names EXACTLY as they appear there.
+8. `packages/web/app/api/_lib.ts` — API conventions.
+9. `packages/web/app/globals.css` — the token system. TOKENS ONLY, no raw hex in components.
+10. `packages/web/components/{Panel,MetricStrip,EmptyState,SeverityChip,VectorChip,MermaidDiagram,PatternReport}.tsx`
+    — IMPORT and reuse (read their props first). DO NOT EDIT them.
+
+## VERIFIED FACTS — use these EXACTLY, do not alter them, do not add others
+Sourced from Cointelegraph's live coverage and article metadata, published 2026-10-29 / 2026-10-30.
+Cite them with the URL list at the bottom of this brief.
+
+- **Loss / scale:** $6.3 billion. Reported as the largest hack in cryptocurrency history. The breach
+  was first signalled on 2026-10-29 and disclosed publicly on 2026-10-30.
+- **Root cause (per Binance and Blockaid's CEO):** attackers gained access to a **compromised
+  DevOps engineer's laptop** and committed **private-key misuse**, not a smart-contract exploit.
+- **EIP-7702 role:** security experts said EIP-7702 **did not cause** the hack — attackers could have
+  drained the wallets without it — but the Ethereum upgrade **may have amplified the losses** by
+  helping bypass withdrawal safeguards. Security researchers also said attackers could have drained
+  Binance's wallets without EIP-7702.
+- **Attribution:** linked to **North Korea's TraderTraitor**. TRM Labs said it has **high confidence**
+  in the attribution. ZachXBT identified stolen funds from the Binance **and Bitget** hacks
+  converging at the same address.
+- **Recovery:** about **$3 billion** in assets frozen by Binance and its partners. Binance pledged to
+  cover all losses, said it set aside more than **$6.34 billion**, and said it holds **$5 billion in
+  matching tokens** to cover the shortfall, to be included in its next proof-of-reserves report.
+- **Law enforcement:** the **FBI and Secret Service** joined the response; US agencies are investigating
+  the theft and helping trace stolen assets.
+- **Attacker holdings (early 2026-10-30):** **18,270 BTC** — more than Coinbase's reported corporate
+  treasury — and a stash exceeding **500,000 ETH**.
+- **Market impact:** BNB fell about **8%**, Bitcoin traded near **$77,000**, roughly **$1.6 billion**
+  in liquidations followed, and crypto-linked equities (Circle, Strategy, Coinbase) sold off.
+- **Secondary finding:** reporters noted investigators had uncovered **additional breaches**.
+
+You may also note the prior Bitget hack (same actor family per ZachXBT) and the historical
+THORChain laundering pattern (Bybit, Bitget) as context — but mark them clearly as prior context,
+not part of this incident.
+
+**Do NOT invent:** tx hashes, block numbers, wallet addresses, contract names, exact token amounts
+beyond the ones above, or victim-count figures. If a number is not above, do not print it.
+
+## YOUR EXCLUSIVE FILE OWNERSHIP
+You own and may create/modify ONLY:
+- `packages/core/src/live-case.ts`
+- `packages/core/src/incidents.ts`  (you may ADD the Binance incident to the registry — nobody else
+  is editing this file right now; add it in the existing style, keep the array valid, and update
+  any count that is derived, not hardcoded)
+- `packages/forensic-engine/src/live-case.ts`
+- `packages/web/app/api/live/**`
+- `packages/web/app/live/**`
+- `packages/web/components/LiveCase*.tsx`
+- `data/narratives/binance-7702.md`
+- `data/ai-reports/binance-7702.json`
+- `scripts/generate-binance-case.ts`
+- `docs/live-case-binance.md`
+
+DO NOT edit: `packages/web/app/page.tsx`, `packages/web/app/{incidents,lab,docs,cases,attack-lab,historical,evidence,bible,showcase,intro,tracker}/**`,
+`packages/web/components/{AppShell,AttackReplay,TraceViewer,GasFlameChart,StorageDiffInspector,BalanceTimeline,PatternReport,MermaidDiagram,LiveSimPanel,SimSummary,EvidencePipelineFigure,ReportView,VectorBreakdown,ChainDonut,SeveritySplit,LossTimelineChart,IncidentTable,IncidentFilters,EngineStatus,Panel,MetricStrip,ThemeToggle,Bible*,Showcase*,Intro*,Tracker*}.tsx`,
+`packages/web/app/globals.css`, `packages/web/app/layout.tsx`, `packages/web/app/api/_lib.ts`,
+`packages/web/app/api/{overview,incidents,scenarios,simulate,report,bundle,status}/**`,
+`packages/forensic-engine/src/{simulator,trace-parser,detectors,report,bundle,foundry,custom,historical,aireport,session,plan}.ts`,
+`packages/cli/**`, `contracts/**`, `docs/pitch/**`, `docs/design/**`, `packages/web/tests/**`, `scripts/qa/**`.
+If you need a change in a forbidden file, do NOT make it — note it in your final report.
+
+## WHAT TO BUILD
+
+### 1. `packages/core/src/live-case.ts` — the live case model
+A typed model of the Binance case: the incident facts (as above, with a `sources` array holding the
+URLs), the attack-chain stages, the affected-assets summary, the responder actions, and the
+Mayall analysis fields. Keep it data, not prose.
+
+### 2. `packages/forensic-engine/src/live-case.ts` — MAYALL'S ACTUAL ANALYSIS
+This is the heart of it. Implement a real analysis function that runs Mayall's rule set against the
+case and returns findings. It must do three separate things and keep them visibly separate:
+
+  (a) **CLASSIFICATION** — map the incident onto Mayall's 16-vector taxonomy. The honest primary
+      classification is `access-control` (the trust boundary broken was the signing key, not a
+      contract). Use `resolveAttackVectorId()` for id normalisation. If you also assign
+      `delegatecall-injection`, justify it via the EIP-7702 delegation-designator mechanism — and
+      label it as a *contributing amplifier*, not the root cause.
+  (b) **BIBLE MAPPING** — map to the Forensic Bible's attack-pattern catalog (sheet 04) and
+      detection signals (sheet 03). For each mapped signal, mark it `observed` (only if the verified
+      facts above actually evidence it), `expected` (what the signal would look like given the
+      pattern), or `notApplicable`. For example a signal about repeated call depth is NOT applicable;
+      a signal about compromised privileged keys IS directly relevant. Quote the Bible's own
+      threshold text — do not paraphrase it into something stronger.
+  (c) **COVERAGE HONESTY** — for EACH of Mayall's 10 detectors, state whether it would fire on this
+      incident and WHY. Most will NOT, because there is no contract bug. Say that plainly and
+      quote the detector's `limitation` string. This is the single most valuable output for a
+      judge: a forensics tool that knows what it cannot see.
+      Then state what IS in scope: Mayall's local Foundry lab cannot reproduce an off-chain key
+      compromise, but the SAME machinery can be pointed at the EIP-7702 delegation mechanics — and
+      if `contracts/src/CustomTarget.sol` / the custom attack lab exists (another agent may be
+      building it — CHECK), mention the delegatecall scenario id (`delegatecall`) as the
+      reproducible proxy: a proxy delegating to an attacker-controlled implementation is the
+      closest local analogue to an EOA delegating to attacker code under EIP-7702.
+      Use the real measured numbers for that proxy: delegatecall scenario drains **50 ETH**,
+      Delegatecall detector confidence **93%**.
+
+### 3. `packages/web/app/api/live/**`
+- `GET /api/live` → the live case: facts, timeline, analysis, coverage matrix, sources.
+- `GET /api/live/report` → the forensic report (markdown + mermaid + generatedBy).
+Follow `packages/web/app/api/_lib.ts` conventions.
+
+### 4. `packages/web/app/live/**` — the LIVE CASE PAGE
+This is a flagship page. It must read like a real incident dossier:
+- A **live tracker** header: the incident status (active investigation / recovery in progress), the
+  loss figure, the frozen amount, the attribution confidence, and the last-updated timestamp —
+  presented as a LIVE incident readout, with an arterial-red pulse on the active state
+  (respect `prefers-reduced-motion`).
+- A **timeline** of the incident (29–30 Oct 2026) — the onchain alerts, the disclosure, the
+  freeze, the law-enforcement response, the attribution. Built from the verified facts with their
+  timestamps where known.
+- **Mayall's analysis panel**: the classification, the Bible pattern mapping, and the evidence
+  confidence for each mapped signal.
+- **The coverage matrix**: all 10 detectors, each with fired / not-fired / out-of-scope and the
+  reason. This is the panel that shows intellectual honesty. Make it excellent.
+- **The AI forensic report**: the full 7-section document with a **mermaid diagram** of the attack
+  chain (funds flow / attack sequence), rendered with the existing `MermaidDiagram` component.
+- **The client action plan**: the 24h / week / month plan for an exchange in this position —
+  concrete and specific (delegation-designator monitoring, key rotation and HSM policy, withdrawal
+  rate limits, address allowlisting, proof-of-reserves disclosure, TTP hunting for the
+  TraderTraitor pattern including THORChain laundering routes, law-enforcement coordination).
+- **Sources**: every source URL, listed with its publisher and date. Never hide the attribution
+  confidence — say "TRM Labs: high confidence", which is the analyst's wording, not yours.
+- Dark theme first AND correct in light theme. Obey RED-ROOM.md: no kicker/eyebrow above headings,
+  no hero-metric card grid, no nested panels, no gradient text, no emoji, tokens only, 44px touch
+  targets, aria-labels on icon-only buttons, real `<button>`/`<a>`, focus rings never removed,
+  `prefers-reduced-motion` kills all motion.
+
+### 5. AI-authored report — PAIRED WITH MINIMAX CODE (`mcode`)
+`scripts/generate-binance-case.ts` must generate the report narrative with the local **`mcode`** CLI:
+```
+& "$env:USERPROFILE\.minimax-code\mcode.ps1" exec --cwd "C:\Users\aswat\Projects\w3-forensics" --model minimax/MiniMax-M3.1-Flash --effort on "<PROMPT>"
+```
+- Invoke via `child_process.spawn` with `powershell.exe -NoProfile -Command`, capture stdout and
+  stderr separately, enforce a ~240 s timeout and kill the child on timeout.
+- If the model name is rejected, retry once with `minimax/MiniMax-M3`.
+- The prompt must carry the verified facts and require: executive summary, attack chain, evidence
+  reconstruction, detection analysis (including the coverage matrix), remediation, client action
+  plan, and a **```mermaid fenced block** with the attack-chain `flowchart TD` and the funds-flow
+  `sequenceDiagram`.
+- **Fallback rule:** if mcode fails, fall back to a deterministic generator and label the output
+  `generatedBy: "deterministic"`. Never present a template as an AI report.
+- Write the markdown to `data/narratives/binance-7702.md` (match the exact format `loadNarrative`
+  expects in `packages/forensic-engine/src/report.ts`) and a machine-readable JSON to
+  `data/ai-reports/binance-7702.json`.
+- The script must be re-runnable and must print the observed `generatedBy` value.
+
+### 6. `docs/live-case-binance.md`
+A real document: the incident as reported, the verified facts with source URLs, Mayall's
+classification and mapping, the coverage matrix, the honest limits, and the client action plan.
+
+## HARD CONSTRAINTS
+- Do NOT `npm install` anything. No new dependencies. `lucide-react` for icons only.
+- `rm` is policy-gated — overwrite in place instead of deleting.
+- `npx tsc --noEmit` from `packages/web` must pass with zero errors in your files.
+- The product name is **Mayall**. Never write "HELIX" in user-visible copy.
+- NEVER present this as a local Foundry reproduction of the Binance breach. It is a retrospective
+  analysis of a publicly reported incident, plus a local reproduction of the CLOSEST ANALOGUE
+  (the delegatecall scenario). Draw that line clearly everywhere.
+- Never fabricate a tx hash, address, or block number.
+
+## VERIFICATION (all of it, before you finish)
+1. `npx tsx scripts/generate-binance-case.ts` → must produce the report at
+   `data/narratives/binance-7702.md` with all 7 sections and a ```mermaid block. Report the REAL
+   `generatedBy` value you observed and quote the first 5 lines of the narrative.
+2. `npx tsc --noEmit` (from `packages/web`) — zero errors in your files.
+3. `Invoke-RestMethod http://localhost:3000/api/live` returns real data (new routes need a few
+   seconds to compile — retry). `Invoke-WebRequest http://localhost:3000/live -UseBasicParsing`
+   → 200, and the HTML contains "Binance" and "6.3".
+4. Screenshot `/live` in BOTH themes and LOOK at the PNGs:
+   `npx tsx scripts/shoot.ts live-case /live 1440 1100 dark` and `... light` (read `scripts/shoot.ts`
+   first for the exact argument order). Fix anything broken — especially overflow, clipped text and
+   light-theme contrast.
+5. Write `docs/live-case-binance.md`.
+
+## SOURCES (cite these)
+- https://cointelegraph.com/news/binance-linked-wallet-faces-possible-exploit-blockchain-researcher-warns
+- https://cointelegraph.com/news/live-updates-binance-63b-hack-linked-to-north-koreas-tradertraitor
+- https://cointelegraph.com/news/binance-hack-security-ethereum-eip-7702-role
+- https://cointelegraph.com/news/binance-hack-may-involve-private-key-misuse-not-theft-blockaid-ceo
+- https://cointelegraph.com/news/north-korea-linked-to-63b-binance-hack-by-crypto-investigators
+- https://cointelegraph.com/news/binance-fbi-recover-assets-hack
+- https://cointelegraph.com/news/binance-5-billion-replacement-crypto-in-custody
+- https://cointelegraph.com/news/binance-hacker-bitcoin-holdings-exceed-coinbase-btc-treasury
+- https://cointelegraph.com/news/recap-binances-record-63b-hack-unfolded
+
+Work autonomously. Do not ask questions. Do not stop early. Finish with a short report: files created,
+the classification you chose and why, the coverage-matrix result, the observed `generatedBy` value,
+and anything you could not complete.

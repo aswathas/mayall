@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mayall — Forensic Reel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Public+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #090607; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .probe { position: absolute; left: -9999px; top: 0; white-space: nowrap; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div class="probe" style="font-family:'Familjen Grotesk';font-weight:600">Mayall</div>
+<div class="probe" style="font-family:'Public Sans';font-weight:400">Evidence</div>
+<div class="probe" style="font-family:'JetBrains Mono';font-weight:500">0123456789</div>
+<script>
+(() => {
+  'use strict';
+
+  const W = 1920, H = 1080;
+  const MX = 96, MY = 54;
+  const c = document.getElementById('c');
+  const ctx = c.getContext('2d');
+
+  const COL = {
+    void: '#090607',
+    abyss: '#0c0809',
+    panel: '#110b0d',
+    panel2: '#170f12',
+    elevated: '#1e1417',
+    edge: '#2b1a1e',
+    edgeStrong: '#3d2429',
+    ink: '#f7eded',
+    dim: '#c3a7aa',
+    faint: '#8f7276',
+    arterial: '#ff3b30',
+    arterialDeep: '#b31f18',
+    ember: '#ff7a45',
+    amber: '#f5b942',
+    bone: '#efe6e4'
+  };
+
+  const MONO = '"JetBrains Mono", "Cascadia Mono", Consolas, monospace';
+  const DISPLAY = '"Familjen Grotesk", "Public Sans", ui-sans-serif, sans-serif';
+  const SANS = '"Public Sans", system-ui, sans-serif';
+
+  // ── easing: the product token cubic-bezier(0.16, 1, 0.3, 1) ──────────────
+  function bezier(x1, y1, x2, y2) {
+    return function (x) {
+      if (x <= 0) return 0;
+      if (x >= 1) return 1;
+      let t = x;
+      for (let i = 0; i < 8; i++) {
+        const cx = 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
+        const dx = 3 * (1 - t) * (1 - t) * x1 + 6 * (1 - t) * t * (x2 - x1) + 3 * t * t * (1 - x2);
+        if (Math.abs(cx - x) < 1e-6) break;
+        t -= (cx - x) / (dx || 1e-6);
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+      }
+      return 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
+    };
+  }
+  const EASE = bezier(0.16, 1, 0.3, 1);
+
+  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const lerp = (a, b, p) => a + (b - a) * p;
+  const prog = (t, start, dur) => clamp01((t - start) / dur);
+
+  // ── text helpers ─────────────────────────────────────────────────────────
+  function setFont(size, weight, family) {
+    ctx.font = weight + ' ' + size + 'px ' + family;
+  }
+  function fill(str, x, y, color, align) {
+    ctx.fillStyle = color;
+    ctx.textAlign = align || 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(str, x, y);
+    ctx.textAlign = 'left';
+  }
+  function body(str, x, y, size, color, weight, family, align) {
+    setFont(size, weight || 400, family || SANS);
+    fill(str, x, y, color, align);
+  }
+  function micro(str, x, y, color, align, size) {
+    const fs = size || 11;
+    setFont(fs, 500, MONO);
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    const chars = Array.from(str.toUpperCase());
+    const track = 0.18 * fs;
+    let widths = chars.map((ch) => ctx.measureText(ch).width);
+    let total = widths.reduce((a, b) => a + b, 0) + track * (chars.length - 1);
+    let cx = align === 'right' ? x - total : align === 'center' ? x - total / 2 : x;
+    for (let i = 0; i < chars.length; i++) {
+      ctx.fillText(chars[i], cx, y);
+      cx += widths[i] + track;
+    }
+    return total;
+  }
+  function trackedCase(str, x, y, size, weight, family, trackPx, color, align) {
+    setFont(size, weight, family);
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    const chars = Array.from(str);
+    const widths = chars.map((ch) => ctx.measureText(ch).width);
+    const total = widths.reduce((a, b) => a + b, 0) + trackPx * (chars.length - 1);
+    let cx = align === 'right' ? x - total : align === 'center' ? x - total / 2 : x;
+    for (let i = 0; i < chars.length; i++) {
+      ctx.fillText(chars[i], cx, y);
+      cx += widths[i] + trackPx;
+    }
+    return total;
+  }
+  function wrap(str, maxW, size, weight, family) {
+    setFont(size, weight || 400, family || SANS);
+    const words = str.split(' ');
+    const lines = [];
+    let line = '';
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (ctx.measureText(test).width > maxW && line) {
+        lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+  function fitText(str, maxW, size, weight, family) {
+    setFont(size, weight || 400, family || MONO);
+    if (ctx.measureText(str).width <= maxW) return str;
+    let lo = 0, hi = str.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ctx.measureText(str.slice(0, mid) + '…').width <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return str.slice(0, lo) + '…';
+  }
+  const fmt = (n) => n.toLocaleString('en-US');
+
+  // ── shapes ───────────────────────────────────────────────────────────────
+  function roundPath(x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.lineTo(x + w - rr, y);
+    ctx.arcTo(x + w, y, x + w, y + rr, rr);
+    ctx.lineTo(x + w, y + h - rr);
+    ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+    ctx.lineTo(x + rr, y + h);
+    ctx.arcTo(x, y + h, x, y + h - rr, rr);
+    ctx.lineTo(x, y + rr);
+    ctx.arcTo(x, y, x + rr, y, rr);
+    ctx.closePath();
+  }
+  function panel(x, y, w, h) {
+    roundPath(x, y, w, h, 14);
+    ctx.fillStyle = COL.panel;
+    ctx.fill();
+    ctx.strokeStyle = COL.edge;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  function hairline(x, y, w, color, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha == null ? 1 : alpha;
+    ctx.fillStyle = color || COL.edge;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), 1);
+    ctx.restore();
+  }
+  function chip(x, y, label, color, border, bg) {
+    setFont(10.5, 500, MONO);
+    const tw = ctx.measureText(label.toUpperCase()).width;
+    const track = 1.4;
+    const w = tw + track * (label.length - 1) + 20;
+    const h = 22;
+    roundPath(x, y, w, h, 11);
+    if (bg) { ctx.fillStyle = bg; ctx.fill(); }
+    ctx.strokeStyle = border || COL.edge;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    let cx = x + 10;
+    const chars = Array.from(label.toUpperCase());
+    for (const ch of chars) {
+      ctx.fillText(ch, cx, y + 15);
+      cx += ctx.measureText(ch).width + track;
+    }
+    return w;
+  }
+  function shotState(t, start, end, fadeIn, fadeOut, lift) {
+    // Hard cut at the shot boundary (no dip-to-black), with the incoming shot
+    // lifting into place. Every frame therefore carries content.
+    const fi = fadeIn || 0.16;
+    const inShot = t >= start && (t < end || end >= 26);
+    const pIn = EASE(prog(t, start, fi));
+    const dy = (1 - pIn) * (lift == null ? 26 : lift);
+    return { a: inShot ? 1 : 0, dy: dy };
+  }
+
+  // ── ground ───────────────────────────────────────────────────────────────
+  function ground() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0b0708');
+    g.addColorStop(0.42, '#090607');
+    g.addColorStop(1, '#070506');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,237,237,0.022)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= W; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, H);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= H; y += 64) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(W, y + 0.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    const rg = ctx.createRadialGradient(W * 0.3, 0, 0, W * 0.3, 0, 1480);
+    rg.addColorStop(0, 'rgba(9,6,7,0)');
+    rg.addColorStop(0.7, 'rgba(9,6,7,0.55)');
+    rg.addColorStop(1, 'rgba(9,6,7,0.96)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // ── real data ────────────────────────────────────────────────────────────
+  const TRACE = `Traces:
+  [2098601] ReentrancyExploitTest::testExploit()
+    ├─ [0] VM::deployCode("src/ReentrancyVault.sol:ReentrancyVault")
+    │   ├─ [229680] → new ReentrancyVault@0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f
+    │   └─ ← [Return] ReentrancyVault: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f]
+    ├─ [0] VM::deployCode("src/ReentrancyVault.sol:ReentrancyAttacker", 0x0000000000000000000000005615deb798bb3e4dfa0139dfa1b3d433cc23b72f)
+    │   ├─ [202081] → new ReentrancyAttacker@0x2e234DAe75C793f67A35089C9d99245E1C58470b
+    │   └─ ← [Return] ReentrancyAttacker: [0x2e234DAe75C793f67A35089C9d99245E1C58470b]
+    ├─ [0] VM::deal(ReentrancyExploitTest: [0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496], 1000000000000000000000 [1e21])
+    │   └─ ← [Return]
+    ├─ [0] VM::deal(ReentrancyAttacker: [0x2e234DAe75C793f67A35089C9d99245E1C58470b], 1000000000000000000 [1e18])
+    │   └─ ← [Return]
+    ├─ [67065] ReentrancyVault::deposit{value: 10000000000000000000}()
+    │   ├─ emit Deposit(who: ReentrancyExploitTest: [0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496], amount: 10000000000000000000 [1e19])
+    │   └─ ← [Return]
+    ├─ [0] VM::label(ReentrancyVault: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f], "ReentrancyVault")
+    │   └─ ← [Return]
+    ├─ [0] VM::label(ReentrancyAttacker: [0x2e234DAe75C793f67A35089C9d99245E1C58470b], "ReentrancyAttacker")
+    │   └─ ← [Return]
+    ├─ [0] VM::snapshot()
+    │   └─ ← [Return] 0
+    ├─ [0] VM::record()
+    │   └─ ← [Return]
+    ├─ [0] VM::recordLogs()
+    │   └─ ← [Return]
+    ├─ [195418] ReentrancyAttacker::attack(6)
+    │   ├─ [28901] ReentrancyVault::deposit{value: 1000000000000000000}()
+    │   │   ├─ emit Deposit(who: ReentrancyAttacker: [0x2e234DAe75C793f67A35089C9d99245E1C58470b], amount: 1000000000000000000 [1e18])
+    │   │   └─ ← [Return]
+    │   ├─ [110836] ReentrancyVault::withdraw()
+    │   │   ├─ [101728] ReentrancyAttacker::receive{value: 1000000000000000000}()
+    │   │   │   ├─ [80999] ReentrancyVault::withdraw()
+    │   │   │   │   ├─ [71891] ReentrancyAttacker::receive{value: 1000000000000000000}()
+    │   │   │   │   │   ├─ [71062] ReentrancyVault::withdraw()
+    │   │   │   │   │   │   ├─ [61954] ReentrancyAttacker::receive{value: 1000000000000000000}()
+    │   │   │   │   │   │   │   ├─ [61125] ReentrancyVault::withdraw()
+    │   │   │   │   │   │   │   │   ├─ [52017] ReentrancyAttacker::receive{value: 1000000000000000000}()
+    │   │   │   │   │   │   │   │   │   ├─ [51188] ReentrancyVault::withdraw()
+    │   │   │   │   │   │   │   │   │   │   ├─ [42080] ReentrancyAttacker::receive{value: 1000000000000000000}()
+    │   │   │   │   │   │   │   │   │   │   │   ├─ [41251] ReentrancyVault::withdraw()
+    │   │   │   │   │   │   │   │   │   │   │   │   ├─ [32143] ReentrancyAttacker::receive{value: 1000000000000000000}()
+    │   │   │   │   │   │   │   │   │   │   │   │   │   ├─ [31314] ReentrancyVault::withdraw()
+    │   │   │   │   │   │   │   │   │   │   │   │   │   │   ├─ [306] ReentrancyAttacker::receive{value: 1000000000000000000}()
+    │   │   │   │   │   │   │   │   │   │   │   │   │   │   │   └─ ← [Stop]
+    │   │   │   │   │   │   │   │   │   │   │   │   │   │   └─ ← [Return]
+    │   │   │   │   │   │   │   │   │   │   │   │   │   └─ ← [Stop]
+    │   │   │   │   │   │   │   │   │   │   │   │   └─ ← [Return]
+    │   │   │   │   │   │   │   │   │   │   │   └─ ← [Stop]
+    │   │   │   │   │   │   │   │   │   │   └─ ← [Return]
+    │   │   │   │   │   │   │   │   │   └─ ← [Stop]
+    │   │   │   │   │   │   │   │   └─ ← [Return]
+    │   │   │   │   │   │   │   └─ ← [Stop]
+    │   │   │   │   │   │   └─ ← [Return]
+    │   │   │   │   │   └─ ← [Stop]
+    │   │   │   │   └─ ← [Return]
+    │   │   │   └─ ← [Stop]
+    │   │   └─ ← [Return]
+    │   └─ ← [Return]
+    ├─ [0] VM::accesses(ReentrancyVault: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f])
+    │   └─ ← [Return]
+    ├─ [0] VM::load(ReentrancyVault: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f], 0xc6bd81b73d1fd76b6ab7b2a3e675f602f162633118b2ec0b74d6456669dd8579) [staticcall]
+    │   └─ ← [Return] 0x0000000000000000000000000000000000000000000000000000000000000000
+    ├─ [0] VM::assertGt(6000000000000000000 [6e18], 0, "vault must lose funds") [staticcall]
+    │   └─ ← [Return]
+    ├─ [0] VM::assertGt(4000000000000000000 [4e18], 0, "vault should not be fully drained in this scenario") [staticcall]
+    │   └─ ← [Return]
+    ├─ [0] VM::revertTo(0)
+    │   └─ ← [Return] true
+    └─ ← [Return]`.split('\n');
+
+  const TREE_ROWS = [
+    { d: 0, g: '', label: 'ReentrancyExploitTest.testExploit', gas: '2,098,601' },
+    { d: 1, g: '├─', label: 'VM.deployCode', gas: '0' },
+    { d: 2, g: '└─', label: 'new ReentrancyVault', gas: '229,680' },
+    { d: 1, g: '├─', label: 'VM.deployCode', gas: '0' },
+    { d: 2, g: '└─', label: 'new ReentrancyAttacker', gas: '202,081' },
+    { d: 1, g: '├─', label: 'VM.deal', gas: '0' },
+    { d: 1, g: '├─', label: 'ReentrancyVault.deposit', gas: '67,065' },
+    { d: 1, g: '├─', label: 'ReentrancyAttacker.attack', gas: '195,418' },
+    { d: 2, g: '├─', label: 'ReentrancyVault.deposit', gas: '28,901' },
+    { d: 2, g: '├─', label: 'ReentrancyVault.withdraw', gas: '110,836' },
+    { d: 3, g: '├─', label: 'ReentrancyAttacker.receive', gas: '101,728' },
+    { d: 4, g: '├─', label: 'ReentrancyVault.withdraw', gas: '80,999' },
+    { d: 5, g: '├─', label: 'ReentrancyAttacker.receive', gas: '71,891' },
+    { d: 6, g: '├─', label: 'ReentrancyVault.withdraw', gas: '71,062' },
+    { d: 7, g: '└─', label: 'ReentrancyAttacker.receive', gas: '61,954' }
+  ];
+
+  const WITHDRAW_GAS = ['110,836', '80,999', '71,062', '61,125', '51,188', '41,251', '31,314'];
+  const RECEIVE_GAS = ['101,728', '71,891', '61,954', '52,017', '42,080', '32,143', '306'];
+
+  const EVIDENCE = [
+    'Trace shows ReentrancyVault::deposit invoked 2 times within a single transaction',
+    'Trace shows ReentrancyVault::withdraw invoked 7 times within a single transaction',
+    'Trace shows ReentrancyAttacker::receive invoked 7 times within a single transaction',
+    'Root cause narrative references reentran, re-entran, reentrancy',
+    '9 value-bearing calls observed in the exploit transaction'
+  ];
+
+  const LOOKS_FOR = 'The same contract::function pair invoked more than once inside a single transaction, with the later invocation nested inside the earlier one. Cheatcode frames are excluded.';
+  const LIMITATION = 'Counts repetition, not causality. Two independent calls to the same function in one transaction are indistinguishable from a re-entrant loop without reading the state updates.';
+  const EMITS = [
+    'The repeated pair and the number of invocations',
+    'Value-bearing calls observed in the transaction',
+    'A narrative reference to re-entrancy in the artifact'
+  ];
+  const ROOT_CAUSE = 'withdraw() transfers ETH to msg.sender before zeroing balances[msg.sender], so a malicious receiver can re-enter withdraw() and drain the vault in one transaction.';
+
+  // ── SHOT 1 · HOOK 0.0–2.2 ────────────────────────────────────────────────
+  function shotHook(t) {
+    const s = shotState(t, 0, 2.2, 0.15, 0.18, 26);
+    if (s.a <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = s.a;
+    ctx.translate(0, s.dy);
+
+    // corner ticks (present from frame 0 so the reel never opens on black)
+    const len = 18;
+    ctx.strokeStyle = COL.edgeStrong;
+    ctx.lineWidth = 1;
+    const corners = [
+      [MX, MY, 1, 1], [W - MX, MY, -1, 1],
+      [MX, H - MY, 1, -1], [W - MX, H - MY, -1, -1]
+    ];
+    for (const [x, y, sx, sy] of corners) {
+      ctx.beginPath();
+      ctx.moveTo(x, y + sy * len);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x + sx * len, y);
+      ctx.stroke();
+    }
+
+    micro('EVIDENCE · TRACE LINE', MX, 300, COL.faint);
+    micro('LAB-REENTRANCY', W - MX, 300, COL.faint, 'right');
+    micro('REENTRANCYVAULT', MX, 340, COL.dim);
+
+    const line = '├─ [110836] ReentrancyVault::withdraw()';
+    const tp = clamp01((t - 0.06) / 0.86);
+    const n = Math.floor(line.length * EASE(tp));
+    setFont(30, 400, MONO);
+    ctx.fillStyle = COL.ink;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    ctx.fillText(line.slice(0, n), MX, 388);
+    if (t > 0.06 && t < 0.99) {
+      const w = ctx.measureText(line.slice(0, n)).width;
+      ctx.fillStyle = COL.arterial;
+      ctx.fillRect(MX + w + 2, 362, 2, 32);
+    }
+
+    const rp = EASE(prog(t, 0.95, 0.3));
+    if (rp > 0) {
+      ctx.fillStyle = COL.arterial;
+      ctx.fillRect(MX, 416, 420 * rp, 1);
+    }
+
+    const lp = EASE(prog(t, 0.9, 0.3));
+    ctx.globalAlpha = s.a * lp;
+    micro('ETH DRAINED', MX, 520, COL.faint);
+    const vp = EASE(prog(t, 0.9, 0.55));
+    const value = (6 * vp).toFixed(3);
+    setFont(150, 600, DISPLAY);
+    ctx.fillStyle = COL.arterial;
+    ctx.textAlign = 'left';
+    ctx.fillText(value, MX, 706);
+    const vw = ctx.measureText(value).width;
+    setFont(44, 400, MONO);
+    ctx.fillStyle = COL.dim;
+    ctx.fillText('ETH', MX + vw + 22, 702);
+
+    ctx.restore();
+  }
+
+  // ── SHOT 2 · THE TRACE 2.2–7.0 ───────────────────────────────────────────
+  function shotTrace(t) {
+    const s = shotState(t, 2.2, 7.0, 0.18, 0.18, 26);
+    if (s.a <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = s.a;
+    ctx.translate(0, s.dy);
+
+    micro('EVIDENCE / TRACE', MX, 132, COL.dim);
+    micro('FORGE -VVVV · 175 LINES → 82 NODES', W - MX, 132, COL.faint, 'right');
+    hairline(MX, 156, W - MX * 2, COL.edge, EASE(prog(t, 2.2, 0.4)));
+
+    // panels
+    panel(96, 180, 844, 780);
+    panel(980, 180, 844, 780);
+    micro('RAW TRACE', 120, 214, COL.faint);
+    micro('PARSED CALL TREE', 1004, 214, COL.faint);
+    micro('DEPTH = COLUMN / 4', 1800, 214, COL.faint, 'right');
+
+    // ── left: scrolling real trace ──
+    const contentL = 118, contentR = 912, contentTop = 242, contentBottom = 944;
+    const rowH = 21, fontSize = 12.5;
+    let attackIdx = 0;
+    for (let i = 0; i < TRACE.length; i++) {
+      if (TRACE[i].includes('ReentrancyAttacker::attack(6)')) { attackIdx = i; break; }
+    }
+    const scroll = t < 3.9
+      ? lerp(0, Math.max(0, attackIdx - 6), EASE(prog(t, 2.25, 1.65)))
+      : lerp(Math.max(0, attackIdx - 6), attackIdx + 12, EASE(prog(t, 3.9, 2.5)));
+
+    ctx.save();
+    roundPath(100, 228, 836, 720, 8);
+    ctx.clip();
+
+    const bandY = 560;
+    const first = Math.max(0, Math.floor(scroll) - 2);
+    const last = Math.min(TRACE.length - 1, Math.floor(scroll) + 36);
+    for (let i = first; i <= last; i++) {
+      const raw = TRACE[i];
+      const y = contentTop + (i - scroll) * rowH;
+      if (y < contentTop - rowH || y > contentBottom) continue;
+      const isWithdraw = raw.includes('withdraw()');
+      const isReceive = raw.includes('receive');
+      let color = 'rgba(143,114,118,0.78)';
+      if (isWithdraw) color = COL.ink;
+      else if (isReceive) color = COL.dim;
+      if (Math.abs(y - bandY) < rowH * 0.5) color = COL.ink;
+
+      if (Math.abs(y - bandY) < rowH * 0.5) {
+        ctx.fillStyle = 'rgba(255,237,237,0.028)';
+        ctx.fillRect(104, y - 15, 828, rowH);
+      }
+      if (isWithdraw) {
+        ctx.fillStyle = COL.arterial;
+        ctx.fillRect(106, y - 5, 2, 6);
+      }
+      setFont(fontSize, 400, MONO);
+      ctx.fillStyle = color;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(fitText(raw, contentR - contentL - 12, fontSize, 400, MONO), contentL, y);
+    }
+
+    // functional fade masks so scrolling lines do not cut against the header
+    const topFade = ctx.createLinearGradient(0, 228, 0, 264);
+    topFade.addColorStop(0, 'rgba(17,11,13,1)');
+    topFade.addColorStop(1, 'rgba(17,11,13,0)');
+    ctx.fillStyle = topFade;
+    ctx.fillRect(100, 228, 836, 36);
+    const botFade = ctx.createLinearGradient(0, 906, 0, 948);
+    botFade.addColorStop(0, 'rgba(17,11,13,0)');
+    botFade.addColorStop(1, 'rgba(17,11,13,1)');
+    ctx.fillStyle = botFade;
+    ctx.fillRect(100, 906, 836, 42);
+    ctx.restore();
+
+    // read band label
+    micro('READ', 120, 944, COL.faint);
+
+    // ── right: call tree rows ──
+    const rowTop = 250, rowStep = 32;
+    for (let i = 0; i < TREE_ROWS.length; i++) {
+      const p = EASE(prog(t, 2.5 + i * 0.2, 0.3));
+      if (p <= 0) continue;
+      const r = TREE_ROWS[i];
+      const y = rowTop + i * rowStep;
+      ctx.globalAlpha = s.a * p;
+      // depth chip
+      roundPath(1004, y - 13, 30, 18, 5);
+      ctx.strokeStyle = COL.edge;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      setFont(10, 500, MONO);
+      ctx.fillStyle = COL.faint;
+      ctx.textAlign = 'left';
+      ctx.fillText('d' + r.d, 1010, y);
+
+      const gx = 1048 + r.d * 26;
+      setFont(12.5, 400, MONO);
+      ctx.fillStyle = COL.faint;
+      ctx.fillText(r.g, gx, y);
+      const gw = ctx.measureText(r.g + ' ').width;
+      const isHot = r.label.includes('withdraw');
+      setFont(13, isHot ? 500 : 400, MONO);
+      ctx.fillStyle = isHot ? COL.ink : COL.dim;
+      ctx.fillText(r.label, gx + gw, y);
+      setFont(11, 400, MONO);
+      ctx.fillStyle = isHot ? COL.dim : COL.faint;
+      ctx.textAlign = 'right';
+      ctx.fillText(r.gas, 1800, y);
+      ctx.textAlign = 'left';
+    }
+    ctx.globalAlpha = s.a;
+
+    // ── caliper inset ──
+    const cal = EASE(prog(t, 4.4, 0.5));
+    if (cal > 0) {
+      ctx.globalAlpha = s.a * cal;
+      hairline(1004, 786, 796, COL.edge);
+      micro('DEPTH MEASURE', 1004, 812, COL.faint);
+      const sample = '    ├─ [0] VM::deployCode("src/ReentrancyVault.sol:ReentrancyVault")';
+      setFont(13, 400, MONO);
+      const charW = ctx.measureText('M').width;
+      ctx.fillStyle = COL.dim;
+      ctx.textAlign = 'left';
+      ctx.fillText(fitText(sample, 640, 13, 400, MONO), 1004, 846);
+      ctx.fillStyle = COL.bone;
+      ctx.fillText('├─', 1004 + 4 * charW, 846);
+
+      // ticks at branchIndex 0,4,8,12
+      setFont(9.5, 400, MONO);
+      for (let k = 0; k <= 4; k++) {
+        const tx = 1004 + k * 4 * charW;
+        ctx.fillStyle = k === 1 ? COL.arterial : COL.edgeStrong;
+        ctx.fillRect(Math.round(tx), 856, 1, k === 1 ? 30 : 8);
+        ctx.fillStyle = k === 1 ? COL.arterial : COL.faint;
+        ctx.fillText(String(k * 4), tx - 2, 900);
+      }
+      setFont(12, 500, MONO);
+      ctx.fillStyle = COL.arterial;
+      ctx.fillText('branchIndex 4', 1004 + 4 * charW + 8, 864);
+
+      setFont(15, 500, MONO);
+      ctx.fillStyle = COL.ink;
+      ctx.textAlign = 'right';
+      ctx.fillText('floor(4 / 4) = 1', 1800, 846);
+      ctx.textAlign = 'left';
+      setFont(10.5, 500, MONO);
+      ctx.fillStyle = COL.faint;
+      ctx.fillText('DEPTH 1', 1004, 930);
+    }
+
+    ctx.restore();
+  }
+
+  // ── SHOT 3 · THE RECURSION 7.0–12.5 ──────────────────────────────────────
+  function shotRecursion(t) {
+    const s = shotState(t, 7.0, 12.5, 0.18, 0.18, 24);
+    if (s.a <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = s.a;
+    ctx.translate(0, s.dy);
+
+    micro('RECURSION', MX, 132, COL.dim);
+    micro('WITHDRAW() ×7 · DEPTH 2 → 14', W - MX, 132, COL.faint, 'right');
+    hairline(MX, 156, W - MX * 2, COL.edge, EASE(prog(t, 7.0, 0.4)));
+
+    const x0 = 300, y0 = 228, dx = 58, dy = 46;
+    const nodes = [];
+    for (let i = 0; i < 7; i++) {
+      nodes.push({ kind: 'withdraw', depth: 2 + i * 2, gas: WITHDRAW_GAS[i], label: 'withdraw()' });
+      nodes.push({ kind: 'receive', depth: 3 + i * 2, gas: RECEIVE_GAS[i], label: 'receive{value: 1e18}' });
+    }
+
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const x = x0 + i * dx;
+      const y = y0 + i * dy;
+      const p = EASE(prog(t, 7.15 + i * 0.16, 0.36));
+      if (p <= 0) continue;
+      ctx.globalAlpha = s.a * p;
+
+      // connector from parent
+      if (i > 0) {
+        const px = x - dx, py = y - dy;
+        const L = dy + dx;
+        ctx.save();
+        ctx.strokeStyle = COL.edgeStrong;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([L * p, L]);
+        ctx.beginPath();
+        ctx.moveTo(px + 0.5, py);
+        ctx.lineTo(px + 0.5, y + 0.5);
+        ctx.lineTo(x, y + 0.5);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // node marker
+      ctx.fillStyle = n.kind === 'withdraw' ? COL.arterial : COL.edgeStrong;
+      ctx.fillRect(x - 2, y - 9, n.kind === 'withdraw' ? 2 : 2, 18);
+
+      // depth badge
+      roundPath(x + 10, y - 9, 30, 17, 5);
+      ctx.strokeStyle = COL.edge;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      setFont(9.5, 500, MONO);
+      ctx.fillStyle = COL.faint;
+      ctx.textAlign = 'left';
+      ctx.fillText('d' + n.depth, x + 16, y + 3);
+
+      // label + gas
+      setFont(17, n.kind === 'withdraw' ? 500 : 400, MONO);
+      ctx.fillStyle = n.kind === 'withdraw' ? COL.ink : COL.dim;
+      ctx.fillText(n.label, x + 48, y + 4);
+      setFont(10.5, 400, MONO);
+      ctx.fillStyle = n.kind === 'withdraw' ? COL.arterial : COL.faint;
+      ctx.fillText(n.gas + ' gas', x + 48, y + 21);
+    }
+
+    // counts block
+    const cp = EASE(prog(t, 9.55, 0.45));
+    if (cp > 0) {
+      ctx.globalAlpha = s.a * cp;
+      micro('SAME ENTRY POINT', 1450, 300, COL.faint);
+      setFont(96, 600, DISPLAY);
+      ctx.fillStyle = COL.arterial;
+      ctx.textAlign = 'left';
+      ctx.fillText('×7', 1450, 392);
+      setFont(15, 400, MONO);
+      ctx.fillStyle = COL.dim;
+      ctx.fillText('withdraw()', 1450, 424);
+
+      micro('RE-ENTRY FRAME', 1450, 530, COL.faint);
+      setFont(96, 600, DISPLAY);
+      ctx.fillStyle = COL.bone;
+      ctx.fillText('×7', 1450, 622);
+      setFont(15, 400, MONO);
+      ctx.fillStyle = COL.dim;
+      ctx.fillText('receive()', 1450, 654);
+      hairline(1450, 470, 300, COL.edge);
+    }
+
+    // root cause
+    const rc = EASE(prog(t, 10.4, 0.55));
+    if (rc > 0) {
+      ctx.globalAlpha = s.a * rc;
+      micro('ROOT CAUSE', MX, 876, COL.faint);
+      const lines = wrap(ROOT_CAUSE, 1120, 20, 400, SANS);
+      setFont(20, 400, SANS);
+      ctx.fillStyle = COL.dim;
+      ctx.textAlign = 'left';
+      lines.forEach((ln, i) => ctx.fillText(ln, MX, 908 + i * 28));
+    }
+
+    ctx.restore();
+  }
+
+  // ── SHOT 4 · THE DETECTOR 12.5–17.0 ──────────────────────────────────────
+  function shotDetector(t) {
+    const s = shotState(t, 12.5, 17.0, 0.18, 0.18, 24);
+    if (s.a <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = s.a;
+    ctx.translate(0, s.dy);
+
+    micro('DETECTOR', MX, 132, COL.dim);
+    micro('RULE · DET-REENTRANCY', W - MX, 132, COL.faint, 'right');
+    hairline(MX, 156, W - MX * 2, COL.edge, EASE(prog(t, 12.5, 0.4)));
+
+    panel(96, 184, 992, 752);
+    panel(1112, 184, 712, 752);
+
+    // left: rule card
+    chip(136, 216, 'critical', COL.arterial, 'rgba(255,59,48,0.42)', 'rgba(255,59,48,0.09)');
+    micro('DET-REENTRANCY', 136, 268, COL.faint);
+    setFont(66, 600, DISPLAY);
+    ctx.fillStyle = COL.ink;
+    ctx.textAlign = 'left';
+    ctx.fillText('Reentrancy', 136, 352);
+    hairline(136, 388, 912, COL.edge);
+
+    micro('LOOKS FOR', 136, 428, COL.faint);
+    const lf = wrap(LOOKS_FOR, 872, 18, 400, SANS);
+    setFont(18, 400, SANS);
+    ctx.fillStyle = COL.dim;
+    lf.forEach((ln, i) => ctx.fillText(ln, 136, 462 + i * 28));
+
+    micro('EMITS', 136, 560, COL.faint);
+    setFont(13, 400, MONO);
+    EMITS.forEach((e, i) => {
+      ctx.fillStyle = COL.faint;
+      ctx.fillText('·', 136, 588 + i * 23);
+      ctx.fillStyle = COL.dim;
+      ctx.fillText(e, 152, 588 + i * 23);
+    });
+
+    hairline(136, 668, 912, COL.edge);
+    micro('LIMITATION', 136, 704, COL.amber);
+    const lim = wrap(LIMITATION, 872, 15, 400, SANS);
+    setFont(15, 400, SANS);
+    ctx.fillStyle = 'rgba(245,185,66,0.82)';
+    lim.forEach((ln, i) => ctx.fillText(ln, 136, 738 + i * 24));
+
+    micro('SEVERITY CRITICAL · HEURISTIC DETECTOR', 136, 888, COL.faint);
+
+    // right: evidence
+    micro('EVIDENCE', 1140, 218, COL.faint);
+    micro('5 ITEMS', 1796, 218, COL.faint, 'right');
+    hairline(1140, 242, 656, COL.edge);
+
+    let y = 280;
+    for (let i = 0; i < EVIDENCE.length; i++) {
+      const p = EASE(prog(t, 12.95 + i * 0.18, 0.34));
+      if (p <= 0) continue;
+      ctx.globalAlpha = s.a * p;
+      const hot = i === 1 || i === 2;
+      setFont(10.5, 500, MONO);
+      ctx.fillStyle = COL.faint;
+      ctx.textAlign = 'left';
+      ctx.fillText(String(i + 1).padStart(2, '0'), 1140, y);
+      ctx.fillStyle = hot ? COL.arterial : COL.edgeStrong;
+      ctx.fillRect(1174, y - 12, 2, 15);
+      const lines = wrap(EVIDENCE[i], 590, 13.5, 400, MONO);
+      setFont(13.5, 400, MONO);
+      ctx.fillStyle = hot ? COL.ink : COL.dim;
+      lines.forEach((ln, j) => ctx.fillText(ln, 1192, y + j * 20));
+      y += lines.length * 20 + 26;
+    }
+
+    // confidence
+    const cf = EASE(prog(t, 13.4, 0.4));
+    if (cf > 0) {
+      ctx.globalAlpha = s.a * cf;
+      hairline(1140, 620, 656, COL.edge);
+      micro('CONFIDENCE · HEURISTIC', 1140, 654, COL.faint);
+      const vp = EASE(prog(t, 13.5, 1.3));
+      const pct = Math.round(97 * vp);
+      setFont(118, 600, MONO);
+      ctx.fillStyle = COL.arterial;
+      ctx.textAlign = 'left';
+      ctx.fillText(pct + '%', 1140, 786);
+
+      ctx.fillStyle = COL.edge;
+      ctx.fillRect(1140, 818, 656, 4);
+      ctx.fillStyle = COL.arterial;
+      ctx.fillRect(1140, 818, 656 * (pct / 100), 4);
+
+      micro('5 EVIDENCE ITEMS · SINGLE TRANSACTION', 1140, 856, COL.faint);
+    }
+
+    // fired chip — in the rule card header, clear of all body text
+    const fp = EASE(prog(t, 13.1, 0.35));
+    if (fp > 0) {
+      ctx.globalAlpha = s.a * fp;
+      chip(946, 214, 'rule fired', COL.arterial, 'rgba(255,59,48,0.42)', 'rgba(255,59,48,0.08)');
+    }
+
+    ctx.restore();
+  }
+
+  // ── SHOT 5 · THE EVIDENCE 17.0–22.0 ──────────────────────────────────────
+  function shotEvidence(t) {
+    const s = shotState(t, 17.0, 22.0, 0.18, 0.18, 24);
+    if (s.a <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = s.a;
+    ctx.translate(0, s.dy);
+
+    micro('EVIDENCE BUNDLE', MX, 132, COL.dim);
+    micro('LAB-REENTRANCY · CHAIN-OF-CUSTODY.JSON', W - MX, 132, COL.faint, 'right');
+    hairline(MX, 156, W - MX * 2, COL.edge, EASE(prog(t, 17.0, 0.4)));
+
+    function block(delay, x, y, w, h, draw) {
+      const p = EASE(prog(t, delay, 0.32));
+      if (p <= 0) return;
+      ctx.save();
+      ctx.globalAlpha = s.a * p;
+      ctx.translate(0, (1 - p) * 20);
+      panel(x, y, w, h);
+      draw(p);
+      ctx.restore();
+    }
+
+    // Panel A — storage diff
+    block(17.18, 96, 184, 520, 752, (pA) => {
+      micro('STORAGE DIFF', 118, 218, COL.faint);
+      micro('2 OF 3 CHANGED', 594, 218, COL.faint, 'right');
+      hairline(118, 242, 476, COL.edge);
+      const rows = [
+        { label: 'totalDeposited', slot: '0x…01', before: '10.000', after: '11.000', changed: true },
+        { label: 'totalWithdrawn', slot: '0x…02', before: '0.000', after: '7.000', changed: true },
+        { label: 'balances[attacker]', slot: '0xc6bd…8579', before: '0.000', after: '0.000', changed: false }
+      ];
+      rows.forEach((r, i) => {
+        const y = 300 + i * 172;
+        const p = EASE(prog(t, 17.22 + i * 0.12, 0.34));
+        if (p <= 0) return;
+        ctx.globalAlpha = s.a * pA * p;
+        setFont(16, 500, MONO);
+        ctx.fillStyle = r.changed ? COL.ink : COL.dim;
+        ctx.textAlign = 'left';
+        ctx.fillText(r.label, 118, y);
+        setFont(10.5, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.fillText(r.slot, 118, y + 20);
+        setFont(31, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.fillText(r.before, 118, y + 70);
+        setFont(24, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.fillText('→', 262, y + 70);
+        setFont(31, 500, MONO);
+        ctx.fillStyle = r.changed ? COL.arterial : COL.faint;
+        ctx.fillText(r.after, 312, y + 70);
+        setFont(11, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.fillText('ETH', 448, y + 70);
+        chip(r.changed ? 470 : 456, y - 18, r.changed ? 'changed' : 'unchanged',
+          r.changed ? COL.arterial : COL.faint,
+          r.changed ? 'rgba(255,59,48,0.40)' : COL.edge,
+          r.changed ? 'rgba(255,59,48,0.07)' : null);
+        if (i < rows.length - 1) hairline(118, y + 112, 476, COL.edge, 0.8);
+      });
+      micro('SLOT SUFFIXES ABBREVIATED · VALUES IN ETH', 118, 900, COL.faint);
+    });
+
+    // Panel B — balance timeline
+    block(17.33, 640, 184, 520, 752, (pA) => {
+      micro('BALANCE TIMELINE', 662, 218, COL.faint);
+      micro('0 — 10 ETH SCALE', 1138, 218, COL.faint, 'right');
+      hairline(662, 242, 476, COL.edge);
+
+      const bars = [
+        { label: 'ReentrancyVault', before: 10, after: 4, btxt: '10.000', atxt: '4.000', delta: '−6.000', hot: true },
+        { label: 'ReentrancyAttacker', before: 1, after: 7, btxt: '1.000', atxt: '7.000', delta: '+6.000', hot: false },
+        { label: 'Victim EOA', before: 990, after: 990, btxt: '990.000', atxt: '990.000', delta: '0.000', hot: false, flat: true }
+      ];
+      bars.forEach((b, i) => {
+        const y = 300 + i * 172;
+        const p = EASE(prog(t, 17.34 + i * 0.10, 0.34));
+        if (p <= 0) return;
+        ctx.globalAlpha = s.a * pA * p;
+        setFont(15, 500, MONO);
+        ctx.fillStyle = COL.ink;
+        ctx.textAlign = 'left';
+        ctx.fillText(b.label, 662, y);
+
+        if (b.flat) {
+          setFont(24, 400, MONO);
+          ctx.fillStyle = COL.faint;
+          ctx.fillText('990.000 → 990.000', 662, y + 86);
+          micro('NO MOVEMENT', 1138, y + 86, COL.faint, 'right');
+          return;
+        }
+
+        // paired bars, clear of the numbers
+        const bx = 662, bw = 476;
+        ctx.fillStyle = 'rgba(255,237,237,0.04)';
+        ctx.fillRect(bx, y + 16, bw, 7);
+        ctx.fillStyle = COL.edgeStrong;
+        ctx.fillRect(bx, y + 16, bw * (b.before / 10), 7);
+        ctx.fillStyle = 'rgba(255,237,237,0.04)';
+        ctx.fillRect(bx, y + 29, bw, 12);
+        ctx.fillStyle = b.hot ? COL.arterial : COL.bone;
+        ctx.fillRect(bx, y + 29, bw * (b.after / 10), 12);
+
+        setFont(26, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.fillText(b.btxt, 662, y + 86);
+        ctx.fillStyle = COL.faint;
+        ctx.fillText('→', 820, y + 86);
+        setFont(26, 500, MONO);
+        ctx.fillStyle = b.hot ? COL.arterial : COL.bone;
+        ctx.fillText(b.atxt, 860, y + 86);
+        setFont(10.5, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.fillText('ETH', 1010, y + 86);
+        setFont(13, 500, MONO);
+        ctx.fillStyle = b.hot ? COL.arterial : COL.bone;
+        ctx.textAlign = 'right';
+        ctx.fillText(b.delta, 1138, y + 86);
+        ctx.textAlign = 'left';
+
+        if (i < bars.length - 1) hairline(662, y + 124, 476, COL.edge, 0.8);
+      });
+      micro('BEFORE 10 ETH · AFTER 4 ETH · NET −6 ETH', 662, 900, COL.faint);
+    });
+
+    // Panel C — bundle manifest
+    block(17.48, 1184, 184, 640, 752, (pA) => {
+      micro('BUNDLE MANIFEST', 1206, 218, COL.faint);
+      micro('SHA-256 SEALED', 1802, 218, COL.faint, 'right');
+      hairline(1206, 242, 596, COL.edge);
+
+      const rows = [
+        ['caseRef', 'lab-reentrancy'],
+        ['scenario', 'reentrancy'],
+        ['startedAt', '2026-10-30T20:30:02.990Z'],
+        ['durationMs', '225'],
+        ['ok', 'true'],
+        ['files', '11'],
+        ['generatedAt', '2026-10-30T20:30:04.284Z']
+      ];
+      let y = 286;
+      for (let i = 0; i < rows.length; i++) {
+        const p = EASE(prog(t, 17.5 + i * 0.04, 0.3));
+        if (p <= 0) continue;
+        ctx.globalAlpha = s.a * pA * p;
+        setFont(11.5, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.textAlign = 'left';
+        ctx.fillText(rows[i][0], 1206, y);
+        setFont(12.5, 500, MONO);
+        ctx.fillStyle = i === 4 ? COL.bone : COL.dim;
+        ctx.fillText(rows[i][1], 1380, y);
+        y += 32;
+      }
+
+      hairline(1206, 526, 596, COL.edge);
+      const hp = EASE(prog(t, 17.9, 0.4));
+      if (hp > 0) {
+        ctx.globalAlpha = s.a * pA * hp;
+        micro('TRACE ARTIFACT', 1206, 560, COL.faint);
+        setFont(15, 500, MONO);
+        ctx.fillStyle = COL.ink;
+        ctx.fillText('trace.txt', 1206, 594);
+        setFont(11.5, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.textAlign = 'right';
+        ctx.fillText('21,053 B', 1802, 594);
+        ctx.textAlign = 'left';
+        setFont(12, 400, MONO);
+        ctx.fillStyle = COL.faint;
+        ctx.fillText('sha256', 1206, 628);
+        ctx.fillStyle = COL.dim;
+        ctx.fillText('fa9dd9a5c583424f…', 1282, 628);
+        chip(1206, 664, '11 files · sealed', COL.bone, COL.edgeStrong, COL.elevated);
+      }
+
+      micro('CASE REFERENCE LAB-REENTRANCY', 1206, 900, COL.faint);
+    });
+
+    // caption
+    const cap = EASE(prog(t, 20.35, 0.5));
+    if (cap > 0) {
+      ctx.globalAlpha = s.a * cap;
+      micro('EVIDENCE, NOT A SCREENSHOT', W / 2, 988, COL.dim, 'center', 12);
+    }
+
+    ctx.restore();
+  }
+
+  // ── SHOT 6 · THE PRODUCT 22.0–26.0 ───────────────────────────────────────
+  function shotProduct(t) {
+    const s = shotState(t, 22.0, 26.0, 0.35, 0, 12);
+    if (s.a <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = s.a;
+    ctx.translate(0, s.dy);
+
+    const rp = EASE(prog(t, 22.0, 0.38));
+    if (rp > 0) {
+      const ruleW = 80 + 400 * rp;
+      ctx.fillStyle = COL.edge;
+      ctx.fillRect(W / 2 - ruleW / 2, 566, ruleW, 1);
+    }
+
+    const wp = EASE(prog(t, 22.2, 0.85));
+    if (wp > 0) {
+      const track = lerp(6, -4, wp);
+      ctx.save();
+      ctx.globalAlpha = s.a * wp;
+      trackedCase('Mayall', W / 2, 540, 152, 600, DISPLAY, track, COL.bone, 'center');
+      ctx.restore();
+    }
+
+    const sp = EASE(prog(t, 22.9, 0.4));
+    if (sp > 0) {
+      ctx.globalAlpha = s.a * sp;
+      micro('WEB3 EXPLOIT FORENSICS', W / 2, 616, COL.faint, 'center', 12);
+    }
+
+    const hp = EASE(prog(t, 23.4, 0.55));
+    if (hp > 0) {
+      ctx.globalAlpha = s.a * hp;
+      body('Local Foundry simulation. Not mainnet evidence.', W / 2, 700, 30, COL.dim, 400, SANS, 'center');
+    }
+
+    const rp2 = EASE(prog(t, 24.2, 0.5));
+    if (rp2 > 0) {
+      ctx.globalAlpha = s.a * rp2;
+      setFont(13, 400, MONO);
+      ctx.fillStyle = COL.faint;
+      ctx.textAlign = 'center';
+      ctx.fillText('16 public incidents · $2.39B tracked · 10 detectors', W / 2, 748);
+      ctx.textAlign = 'left';
+    }
+
+    ctx.restore();
+  }
+
+  // ── frame ────────────────────────────────────────────────────────────────
+  function renderAt(t) {
+    const time = Math.max(0, Math.min(26, Number(t) || 0));
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.clearRect(0, 0, W, H);
+    ground();
+    shotHook(time);
+    shotTrace(time);
+    shotRecursion(time);
+    shotDetector(time);
+    shotEvidence(time);
+    shotProduct(time);
+  }
+
+  window.renderAt = renderAt;
+
+  // First paint at t=0 so a screenshot can never be blank while fonts load.
+  renderAt(0);
+
+  const fontFaces = [
+    '400 16px "Familjen Grotesk"',
+    '500 16px "Familjen Grotesk"',
+    '600 16px "Familjen Grotesk"',
+    '700 16px "Familjen Grotesk"',
+    '300 16px "Public Sans"',
+    '400 16px "Public Sans"',
+    '500 16px "Public Sans"',
+    '600 16px "Public Sans"',
+    '400 16px "JetBrains Mono"',
+    '500 16px "JetBrains Mono"',
+    '600 16px "JetBrains Mono"',
+    '700 16px "JetBrains Mono"'
+  ];
+
+  (async () => {
+    try {
+      await Promise.all(fontFaces.map((f) => document.fonts.load(f)));
+      await document.fonts.ready;
+    } catch (e) {
+      // A local fallback stack is declared in every font string.
+    }
+    window.__fontStatus = {
+      display: document.fonts.check('600 16px "Familjen Grotesk"'),
+      body: document.fonts.check('400 16px "Public Sans"'),
+      mono: document.fonts.check('500 16px "JetBrains Mono"')
+    };
+    renderAt(0);
+
+    // rAF preview loop, reads performance.now() (virtual clock during render).
+    const started = performance.now();
+    window.__previewQueued = true;
+    function loop() {
+      const seconds = ((performance.now() - started) / 1000) % 26;
+      renderAt(seconds);
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  })();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,234 @@
+You are implementing 5 additional Foundry exploit scenarios for "HELIX — Web3 Exploit Forensics Console".
+
+# HARD FILE OWNERSHIP
+You own EXACTLY these files (create them):
+- contracts/src/OracleLendingPool.sol
+- contracts/src/NaivePriceOracle.sol
+- contracts/src/AccessControlVault.sol
+- contracts/src/FlashLoanPool.sol
+- contracts/src/CollateralVault.sol
+- contracts/src/SpotOracle.sol
+- contracts/src/DelegateVault.sol
+- contracts/src/MaliciousImplementation.sol
+- contracts/src/SelfdestructVault.sol
+- contracts/test/OracleExploit.t.sol
+- contracts/test/AccessControlExploit.t.sol
+- contracts/test/FlashLoanExploit.t.sol
+- contracts/test/DelegatecallExploit.t.sol
+- contracts/test/SelfdestructExploit.t.sol
+
+Do NOT modify ANY other file. In particular do NOT touch: contracts/test/ExploitBase.t.sol, contracts/test/ReentrancyExploit.t.sol, contracts/src/ReentrancyVault.sol, contracts/foundry.toml, anything under packages/, artifacts/, docs/, scripts/, README.md.
+
+# THE TEMPLATE — READ THESE FIRST, THEY ARE WORKING AND PROVEN
+- contracts/test/ExploitBase.t.sol   (shared helpers: artifactJson, buildStorageJson, buildBalancesJson, buildStepsJson, buildLogsJson, readAfter, readBefore, dedupeSlots, u/si/q/h/eth formatters)
+- contracts/test/ReentrancyExploit.t.sol  (a COMPLETE, PASSING proof-of-concept — copy its structure exactly)
+- contracts/src/ReentrancyVault.sol  (a vulnerable contract + attacker contract)
+
+The reentrancy scenario is green: `forge test --match-path test/ReentrancyExploit.t.sol` passes and writes artifacts/reentrancy.json.
+
+CRITICAL SOLIDITY RULES LEARNED THE HARD WAY (the template already shows these):
+- Solidity has NO string `+` operator. Use `string.concat(...)`.
+- `after` is a RESERVED KEYWORD — never use it as a parameter or variable name.
+- foundry.toml already has `via_ir = true` (do not change it) so stack-too-deep is handled, but still avoid huge local variable counts.
+- `vm.accesses(addr)` returns `(bytes32[] readSlots, bytes32[] writeSlots)` — raw slot keys, not structs.
+- `vm.toString` overloads exist for uint256/int256/address/bytes32/bool.
+- `vm.envOr("HELIX_ARTIFACT_DIR", string("../artifacts"))` gives the artifact directory.
+- `vm.writeFile(path, data)` needs the fs_permissions already configured in foundry.toml (they are).
+- The artifact MUST be written with the EXACT schema produced by ExploitBase.artifactJson — do not invent fields.
+
+# THE EVIDENCE PATTERN (copy from ReentrancyExploit.t.sol)
+```
+uint256 snap = vm.snapshot();     // BEFORE the attack
+vm.record();
+vm.recordLogs();
+... attack ...
+(, bytes32[] memory rawSlots) = vm.accesses(address(target));
+bytes32[] memory slots = dedupeSlots(rawSlots);
+bytes32[] memory afterValues = readAfter(address(target), slots);
+uint256 targetAfter = address(target).balance;      // capture AFTER values now
+uint256 attackerAfter = address(attacker).balance;
+... assertions on the loss ...
+vm.revertTo(snap);                 // back to pre-attack state
+bytes32[] memory beforeValues = readBefore(address(target), slots);  // BEFORE values
+... build labels[] / kinds[] arrays, build the JSON, writeArtifact("<scenario>", json) ...
+```
+`vm.snapshot()` prints a deprecation warning ("replaced by snapshotState") — that is fine, it still works. If `vm.revertTo` misbehaves, use `vm.snapshotState()` / `vm.revertToState()` instead — but try the working pair first.
+
+Each artifact must contain:
+- `storageWrites`: at least one entry with before != after. Use `slotLabel(i)`/`slotKind(i)` helpers per test to give human labels ("oracle.price", "owner", "pool.quoteReserve", ...). IMPORTANT: the slot ORDER from vm.accesses is not guaranteed to match your mental layout, so label defensively — e.g. map by comparing the slot VALUE (use vm.load on known slots before/after to identify which index corresponds to which variable), or give a generic-but-honest label such as "state.slotN" when uncertain. A wrong label is worse than a generic one.
+- `balances`: the victim contract AND the attacker address, before vs after, with signed delta.
+- `steps`: 2-3 steps describing the attack, with gasUsed and valueWei.
+- `lossWei`/`lossEth`: the amount of ETH actually stolen from the victim (measured, not guessed). Assert it with assertGt so the test FAILS if the exploit does not actually work.
+
+# THE 5 SCENARIOS — implement exactly this design (the numbers are balanced so the theft is real and measurable)
+
+## 1. oracle-manipulation
+Files: src/NaivePriceOracle.sol, src/OracleLendingPool.sol, test/OracleExploit.t.sol
+- `NaivePriceOracle`: holds a "quote reserve" that ANY address can push with no access control.
+  ```
+  contract NaivePriceOracle {
+      uint256 public constant BASE_UNITS = 100;
+      uint256 public quoteReserve;             // manipulable
+      uint256 public pushedAt;
+      function push(uint256 newQuote) external { quoteReserve = newQuote; pushedAt = block.timestamp; }
+      function price() public view returns (uint256) { return quoteReserve == 0 ? 1e18 : (quoteReserve * 1e18) / BASE_UNITS; }
+  }
+  ```
+- `OracleLendingPool`: lenders deposit ETH. Collateral is valued in base units: a depositor's collateral is worth `(collateralWei / 1e18) * price()`. LTV = 50%.
+  ```
+  contract OracleLendingPool {
+      NaivePriceOracle public immutable oracle;
+      mapping(address => uint256) public collateral;   // wei deposited
+      mapping(address => uint256) public debt;
+      uint256 public constant LTV_BPS = 5000;          // 50%
+      function deposit() external payable { collateral[msg.sender] += msg.value; }
+      function maxBorrow(address who) public view returns (uint256) {
+          uint256 units = collateral[who] / 1e18;
+          return (units * oracle.price() * LTV_BPS) / 10000;
+      }
+      function borrow(uint256 amount) external {
+          require(amount <= maxBorrow(msg.sender), "exceeds ltv");
+          debt[msg.sender] += amount;
+          (bool ok,) = msg.sender.call{value: amount}(""); require(ok, "transfer failed");
+      }
+  }
+  ```
+- Attack test: victim deposits 1000 ETH into the pool. Attacker deposits 10 ETH, then calls `oracle.push(...)` so that `price()` returns a high value (e.g. push 1000 ether -> price = 1000e18*1e18/100 = 10e18, i.e. 10 ETH per base unit) and then `borrow()`s far more than the 10 ETH deposited. With 10 ETH collateral = 10 units * 10 ETH * 0.5 = 50 ETH max borrow. The pool holds 1000 ETH so the borrow succeeds. The attacker walks away with 50 ETH minus its 10 ETH deposit.
+  - lossWei = 50 ETH (the amount drained from the pool beyond the attacker's own deposit) — measure `poolBefore - poolAfter` and subtract the attacker's deposit, and assert it is > 0.
+  - The storage diff must include the oracle's `quoteReserve` slot changing from 0 to the pushed value, and the pool's `debt` mapping entry for the attacker changing from 0 to 50 ETH.
+
+## 2. access-control
+Files: src/AccessControlVault.sol, test/AccessControlExploit.t.sol
+- The vault has a CORRECTLY guarded owner path AND one path that forgot the modifier:
+  ```
+  contract AccessControlVault {
+      address public owner;
+      mapping(address => uint256) public balances;
+      event EmergencyWithdraw(address indexed to, uint256 amount);
+      constructor() { owner = msg.sender; }
+      modifier onlyOwner() { require(msg.sender == owner, "not owner"); _; }
+      function deposit() external payable { balances[msg.sender] += msg.value; }
+      function emergencyWithdraw(address payable to, uint256 amount) external {   // BUG: onlyOwner missing
+          require(amount <= address(this).balance, "insufficient");
+          balances[to] += amount;
+          (bool ok,) = to.call{value: amount}(""); require(ok, "transfer failed");
+          emit EmergencyWithdraw(to, amount);
+      }
+      function ownerWithdraw(address payable to, uint256 amount) external onlyOwner { ... }  // correctly guarded
+  }
+  ```
+- Attack test: victim deposits 50 ETH. The attacker calls `emergencyWithdraw(attacker, address(vault).balance)` — draining the entire vault — even though the equivalent `ownerWithdraw` is properly guarded. lossWei = 50 ETH (the whole vault).
+  - The diff must show the attacker's `balances` mapping entry going 0 -> 50 ETH, and the victim's entry going 50 ETH -> 0.
+
+## 3. flash-loan
+Files: src/FlashLoanPool.sol, src/SpotOracle.sol, src/CollateralVault.sol, test/FlashLoanExploit.t.sol
+- `FlashLoanPool`: 1000 ETH of liquidity, a 10 bps fee, and `flashLoan(uint256 amount, address borrower)` that sends ETH out and requires the principal + fee back in the same transaction.
+  ```
+  contract FlashLoanPool {
+      uint256 public constant FEE_BPS = 10;
+      uint256 public liquidity;
+      function addLiquidity() external payable { liquidity += msg.value; }
+      function flashLoan(uint256 amount, address borrower) external {
+          require(amount <= liquidity, "insufficient liquidity");
+          uint256 fee = (amount * FEE_BPS) / 10000;
+          liquidity -= amount;
+          (bool ok,) = borrower.call{gas: 900000, value: amount}(""); require(ok, "loan failed");
+          require(address(this).balance >= amount + fee, "not repaid");
+          liquidity += amount + fee;
+      }
+  }
+  ```
+- `SpotOracle`: a quote bond that moves the price. The bond is posted as ETH and can be unwound by the same depositor IMMEDIATELY (no unbonding delay) — that is the vulnerability.
+  ```
+  contract SpotOracle {
+      uint256 public constant BASE_UNITS = 100;
+      mapping(address => uint256) public bonds;
+      uint256 public totalBond;
+      function push() external payable { require(msg.value > 0, "no bond"); bonds[msg.sender] += msg.value; totalBond += msg.value; }
+      function unwind() external {
+          uint256 amt = bonds[msg.sender];
+          bonds[msg.sender] = 0; totalBond -= amt;
+          (bool ok,) = msg.sender.call{value: amt}(""); require(ok, "unwind failed");
+      }
+      function price() public view returns (uint256) { return totalBond == 0 ? 1e18 : (totalBond * 1e18) / BASE_UNITS; }
+  }
+  ```
+- `CollateralVault`: holds 1000 ETH of lender deposits; collateral valued the same way as the oracle scenario; LTV 50%; `borrow()` pays out ETH.
+- Attack test (the classic flash-loan price inflation, capital-free):
+  1. Pool has 1000 ETH liquidity. Vault has 1000 ETH of lender deposits.
+  2. The attacker contract takes a 900 ETH flash loan from the pool and, inside the callback, calls `oracle.push{value: 900 ether}()` — the oracle's totalBond becomes 900 ETH, so `price()` becomes 9 ETH per base unit (900e18*1e18/100 = 9e18).
+  3. The attacker deposits 100 ETH of collateral into the vault. 100 ETH = 100 units * 9 ETH * 0.5 = 450 ETH max borrow.
+  4. The attacker borrows 450 ETH from the vault (the vault holds 1000 ETH so it pays out).
+  5. The attacker calls `oracle.unwind()` to get the 900 ETH bond back, then repays the flash loan (900 ETH + 0.1% fee = 900.9 ETH). The attacker ends up with the 450 ETH it borrowed, minus the 0.9 ETH fee, and its 100 ETH collateral is still locked in the vault.
+  6. lossWei = the vault's ETH loss that is NOT covered by the attacker's own collateral = `vaultBefore - vaultAfter - 100 ether` (the attacker's collateral stays in the vault). Assert it is > 0.
+  - The diff must include the oracle's `totalBond` slot going 0 -> 900 ETH and the vault's `debt` entry for the attacker going 0 -> 450 ETH.
+  - IMPORTANT: the flash loan callback gives the attacker contract 900 ETH, which it must forward as the oracle bond; use a callback pattern (`receive()` or an explicit `onFlashLoan()` the pool calls). The pool calls `borrower.call{gas: 900000, value: amount}` so implement `receive() external payable` on the attacker and branch on a state variable.
+
+## 4. delegatecall
+Files: src/DelegateVault.sol, src/MaliciousImplementation.sol, test/DelegatecallExploit.t.sol
+- `DelegateVault` forwards arbitrary calldata to a CALLER-SUPPLIED implementation via delegatecall, with no allowlist — that is the bug:
+  ```
+  contract DelegateVault {
+      address public owner;
+      mapping(address => uint256) public balances;
+      function deposit() external payable { balances[msg.sender] += msg.value; }
+      function execute(address implementation, bytes calldata data) external {
+          (bool ok,) = implementation.delegatecall(data); require(ok, "delegatecall failed");
+      }
+      function withdraw() external { uint256 b = balances[msg.sender]; balances[msg.sender] = 0; (bool ok,) = msg.sender.call{value: b}(""); require(ok); }
+  }
+  ```
+- `MaliciousImplementation` MUST declare the SAME storage layout as DelegateVault (owner at slot 0, balances at slot 1) so that, under delegatecall, it can read and write the vault's storage:
+  ```
+  contract MaliciousImplementation {
+      address public owner;                 // slot 0
+      mapping(address => uint256) public balances;  // slot 1
+      function drain(address payable to) external {
+          uint256 amount = address(this).balance;
+          balances[to] += amount;           // writes the VAULT's storage
+          (bool ok,) = to.call{value: amount}(""); require(ok, "drain failed");
+      }
+  }
+  ```
+  (under delegatecall, `address(this)` is the vault, so the balance moved is the vault's ETH).
+- Attack test: victim deposits 50 ETH. The attacker deploys MaliciousImplementation and calls `vault.execute(address(impl), abi.encodeCall(MaliciousImplementation.drain, (payable(attacker))))`. The vault's 50 ETH is force-sent to the attacker and the vault's `balances` accounting is corrupted.
+  - lossWei = 50 ETH measured as vaultBefore - vaultAfter.
+  - The diff must show the attacker's `balances` mapping entry going 0 -> 50 ETH in the VAULT's storage.
+
+## 5. selfdestruct
+Files: src/SelfdestructVault.sol, test/SelfdestructExploit.t.sol
+- The owner slot can be rewritten by anyone because one setter forgot the modifier, and `destroy()` force-sends the escrow balance to `owner`:
+  ```
+  contract SelfdestructVault {
+      address public owner;
+      mapping(address => uint256) public balances;
+      constructor() { owner = msg.sender; }
+      modifier onlyOwner() { require(msg.sender == owner, "not owner"); _; }
+      function deposit() external payable { balances[msg.sender] += msg.value; }
+      function setOwner(address newOwner) external { owner = newOwner; }   // BUG: onlyOwner missing
+      function destroy() external onlyOwner { selfdestruct(payable(owner)); }
+  }
+  ```
+  (Note: `selfdestruct` is deprecated in newer EVM versions but still compiles and executes on solc 0.8.20 with evm_version = "cancun". If solc rejects it, use `selfdestruct` via a low-level opcode instead — but try the direct call first.)
+- Attack test: victim deposits 60 ETH. The attacker calls `setOwner(attacker)` then `destroy()`. The vault's 60 ETH is force-transferred to the attacker.
+  - lossWei = 60 ETH measured as vaultBefore - vaultAfter.
+  - The diff must show the `owner` slot (slot 0) changing from the victim's address to the attacker's address — that is the privilege escalation.
+
+# VERIFY BEFORE YOU FINISH (mandatory, report real output)
+From C:\Users\aswat\Projects\w3-forensics\contracts with `$env:PATH = "C:\Users\aswat\Projects\w3-forensics\.tools\foundry;$env:PATH"`:
+1. `forge build` — must succeed with no errors.
+2. `forge test -vv` — ALL SIX tests must pass (yours 5 + the existing reentrancy one). Do not break the existing one.
+3. Run each of your five tests individually with the artifact dir set and confirm the artifact JSON is written:
+   `$env:HELIX_ARTIFACT_DIR='C:\Users\aswat\Projects\w3-forensics\artifacts'`
+   then `forge test --match-path test/<YourTest>.t.sol --match-test testExploit`
+4. Validate each of the five new artifacts parses as JSON and has the right shape. Use node:
+   `node -e "const a=JSON.parse(require('fs').readFileSync('C:/Users/aswat/Projects/w3-forensics/artifacts/<name>.json','utf8')); console.log(a.scenario, a.lossEth, a.storageWrites.length, a.balances.length, a.steps.length)"`
+   for all five: oracle-manipulation, access-control, flash-loan, delegatecall, selfdestruct.
+5. Confirm for each: lossEth > 0 AND at least one storageWrites entry with before !== after.
+
+# DELIVERABLE (final message, max 30 lines)
+- The exact `forge test` summary line (must show 6 passed).
+- A table: scenario | lossEth | storageWrites count | changed-slots count | balances count | steps count.
+- The node -e validation output for the five artifacts.
+- Any deviation from this design and the reason.
+Facts only, no prose padding.

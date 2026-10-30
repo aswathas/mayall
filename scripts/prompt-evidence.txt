@@ -1,0 +1,148 @@
+# BRIEF — EVIDENCE WORKBENCH + "HOW WE TRACE" + DOCS
+
+You are one of several parallel agents in `C:\Users\aswat\Projects\w3-forensics`.
+The product is **Mayall** — a Web3 exploit forensics tool. It runs REAL Foundry exploit
+simulations, parses the real `forge -vvvv` call trace, runs 10 heuristic detectors, and emits a
+forensic report plus a downloadable evidence bundle.
+
+Your job: build the page that shows the **complete evidence** for a case, and the page/figure that
+explains **how the tracing actually works** — with working, tasteful animation.
+
+READ FIRST, IN THIS ORDER (do not skip):
+1. `docs/design/RED-ROOM.md` — the authoritative design/motion/a11y contract. Every rule binds you.
+2. `packages/forensic-engine/src/trace-parser.ts` — the parser. THIS IS THE SUBJECT OF YOUR EXPLAINER.
+3. `packages/forensic-engine/src/detectors.ts` — the 10 detectors and `DETECTOR_CATALOG`.
+4. `packages/forensic-engine/src/simulator.ts` — how a run is invoked.
+5. `packages/forensic-engine/src/report.ts` + `bundle.ts` — the 7-section report and the evidence ZIP
+   (`evidence/trace.txt`, `evidence/storage-diff.csv`, `evidence/balance-timeline.csv`,
+   `evidence/timeline.csv`, `evidence/patterns.json`, `evidence/gas-flame.json`,
+   `chain-of-custody.json`).
+6. `packages/web/app/api/_lib.ts`, `packages/web/app/api/report/[caseId]/route.ts`,
+   `packages/web/app/api/bundle/[caseId]/route.ts`, `packages/web/app/api/scenarios/route.ts`,
+   `packages/web/app/api/incidents/route.ts` — the API surface you will consume.
+7. `packages/web/components/TraceViewer.tsx`, `GasFlameChart.tsx`, `StorageDiffInspector.tsx`,
+   `BalanceTimeline.tsx`, `PatternReport.tsx`, `ReportView.tsx`, `SimSummary.tsx`, `Panel.tsx`,
+   `MetricStrip.tsx`, `EmptyState.tsx`, `MermaidDiagram.tsx` — EXISTING components. IMPORT and reuse
+   them (read their props first). DO NOT EDIT them — other agents own them.
+8. `packages/web/app/globals.css` — the token system. USE TOKENS ONLY, no raw hex in components.
+9. `packages/web/app/cases/[slug]/page.tsx` — see how a case page is assembled today.
+
+## YOUR EXCLUSIVE FILE OWNERSHIP (do not touch anything else — other agents own it)
+You own and may create/modify ONLY:
+- `packages/web/app/evidence/page.tsx`
+- `packages/web/app/evidence/loading.tsx`
+- `packages/web/app/trace/page.tsx`
+- `packages/web/app/trace/loading.tsx`
+- `packages/web/components/EvidenceWorkbench*.tsx`
+- `packages/web/components/TraceExplainer*.tsx`
+- `packages/web/components/BundleManifest*.tsx`
+- `packages/web/components/ChainOfCustody*.tsx`
+- `packages/web/app/api/evidence/route.ts`
+- `packages/web/app/api/evidence/[caseId]/route.ts`
+- `packages/web/app/api/evidence/[caseId]/manifest/route.ts`
+- `docs/tracing.md`
+- `docs/evidence-bundle.md`
+
+DO NOT edit: `packages/web/app/{page.tsx,incidents,lab,docs,cases,attack-lab,historical,bible,showcase}`,
+`packages/web/components/{AppShell,AttackReplay,TraceViewer,GasFlameChart,StorageDiffInspector,BalanceTimeline,PatternReport,MermaidDiagram,LiveSimPanel,SimSummary,EvidencePipelineFigure,ReportView,VectorBreakdown,ChainDonut,SeveritySplit,LossTimelineChart,IncidentTable,IncidentFilters,EngineStatus,Panel,MetricStrip,ThemeToggle}.tsx`,
+`packages/web/app/globals.css`, `packages/web/app/api/_lib.ts`, `packages/web/app/layout.tsx`,
+`packages/forensic-engine/src/**`, `packages/core/**`, `packages/cli/**`, `contracts/**`,
+`docs/pitch/**`, `packages/web/tests/**`, `scripts/qa/**`, `data/**`.
+If you need a change in a forbidden file, do NOT make it — note it in your final report.
+
+## WHAT TO BUILD
+
+### 1. `/evidence` — the Evidence Workbench (the "everything" page)
+One page that shows the COMPLETE evidence for a chosen case, all on one screen, in this order:
+- A case selector (the six local scenarios + any custom runs). Source it from `/api/scenarios` and
+  `/api/incidents`. Fetch the artifact via the existing routes.
+- **Raw evidence**: the verbatim `forge` trace text (`evidence/trace.txt` from the bundle, or the
+  trace stored in the artifact). Show it in a real, scrollable, monospace panel with a copy button.
+  The raw text must be REAL data fetched from the API — never hardcoded sample text.
+- **Parsed call tree**: the trace tree from `TraceViewer` (it shows depth/nesting).
+- **Gas flame graph**: `GasFlameChart` (gas per node).
+- **Storage diff**: `StorageDiffInspector` (before/after slot values).
+- **Balance timeline**: `BalanceTimeline` (ETH movements).
+- **Detection findings**: `PatternReport` (detector name, confidence, the matched evidence).
+- **Report**: `ReportView` / the markdown from `/api/report/<caseId>/markdown`.
+- **Bundle manifest + chain of custody**: a NEW component you own — `BundleManifest` — listing every
+  file inside the forensic bundle with its SHA-256 (the bundle writes `chain-of-custody.json`), and
+  a `ChainOfCustody` component showing the hash chain / generation timestamp / tool versions. Fetch
+  this from your new `/api/evidence/[caseId]/manifest` route (build it from the bundle builder in
+  `packages/forensic-engine/src/bundle.ts` — read it and reuse its manifest logic; do not reimplement
+  hashing).
+- A "Download forensic bundle (.zip)" action wired to the existing `/api/bundle/[caseId]` route.
+- Every panel must show a real empty state when there is no data — never a fake placeholder.
+
+### 2. `/trace` — "How we trace" (the animated explainer)
+A page that teaches the tracing pipeline, with **working animation**:
+  Stage 1 — RAW: a real `forge -vvvv` excerpt streams in (use REAL trace text from the reentrancy
+    artifact, fetched from the API; if the artifact is missing, fall back to `/api/scenarios`+simulate
+    — but never invent trace text).
+  Stage 2 — PARSE: show how the parser assigns DEPTH. Forge indents 4 columns per level, so
+    `depth = floor(branchIndex / 4)`. Animate the indentation being measured and the depth badge
+    appearing on each node. Show the real code lines from `trace-parser.ts` (short excerpts) next to
+    the visual.
+  Stage 3 — TREE: the call tree materialising, parent → child, with the nested `withdraw()` calls
+    visible.
+  Stage 4 — DETECT: the detector rules firing on the nodes they match (e.g. Reentrancy matches
+    repeated target address at depth N and N+2). Use the real detector names and the real
+    `DETECTOR_CATALOG` `looksFor` text.
+  Stage 5 — REPORT: the finding becoming a report section and a bundle entry.
+- The animation must be one coherent, authored moment — a scripted timeline with a `draw(t)`-style
+  pure function, seeded randomness only where needed, and it must respect
+  `prefers-reduced-motion` (kill all animation; show the finished state). The rules are in
+  `docs/design/RED-ROOM.md` §motion and in `.claude/skills/motion-graphics/SKILL.md` — READ THE
+  MOTION-GRAPHICS SKILL and follow it (pure `draw(t)`, `document.fonts.ready` before measuring, 5%
+  safe margin, final-frame hold, no runaway loops).
+- Do NOT rebuild the existing `AttackReplay` canvas piece (another agent owns it). Your animation is
+  the trace-pipeline explainer. Make it clearly different in form: a staged, scroll-driven
+  sequence is fine.
+
+### 3. API routes you own
+- `GET /api/evidence` → available cases (scenarios + artifacts) with a short summary.
+- `GET /api/evidence/[caseId]` → the FULL evidence payload for one case: raw trace text, parsed
+  tree, gas flame, storage diff, balance timeline, patterns, report sections, bundle manifest,
+  chain of custody. Serve it from the artifact/bundle on disk.
+- `GET /api/evidence/[caseId]/manifest` → just the manifest + chain of custody.
+Follow the conventions in `packages/web/app/api/_lib.ts`.
+
+### 4. Documentation
+- `docs/tracing.md` — the full tracing pipeline: how `forge -vvvv` output is captured, how the
+  parser computes depth, how the tree is built, how detectors consume it, what each detector's
+  limitation is, and how to reproduce a run by hand. Include real command lines and a real excerpt
+  of trace output.
+- `docs/evidence-bundle.md` — every file in the ZIP, what it proves, the chain-of-custody format,
+  and how a client should verify it.
+
+## HARD CONSTRAINTS
+- Do NOT `npm install` anything. No new dependencies. `lucide-react` for icons only. No emoji.
+- `rm` is policy-gated on this machine — overwrite in place instead of deleting.
+- `npx tsc --noEmit` must pass with zero errors in your files.
+- Tokens only, no raw hex in components. Use the `--hx-*` CSS variables / Tailwind classes that
+  already exist — read `globals.css` for the exact names.
+- Accessibility floor: 4.5:1 body contrast, 44px touch targets, `aria-label` on every icon-only
+  button, real `<button>`/`<a>`, focus rings never removed, `prefers-reduced-motion` kills all motion.
+- Dark theme is the default; light theme must also be correct. No component branches on theme —
+  use the tokens.
+- Honesty: every panel that shows simulated data must say it is a local Foundry simulation.
+
+## VERIFICATION (all of it, before you finish)
+1. `npx tsc --noEmit` — zero errors in your files.
+2. The dev server runs on http://localhost:3000. Verify:
+   `Invoke-RestMethod http://localhost:3000/api/evidence` and
+   `Invoke-RestMethod http://localhost:3000/api/evidence/reentrancy` return real data (not empty).
+   (New routes may need a few seconds to compile — retry.)
+3. Confirm `/evidence` and `/trace` render with REAL data by fetching them:
+   `Invoke-WebRequest http://localhost:3000/evidence -UseBasicParsing` → status 200, and the HTML
+   must contain a real fragment of the reentrancy trace (search for "withdraw" or "ReentrancyVault").
+   Same for `/trace`.
+4. Screenshot both pages in BOTH themes to confirm they look right. Use the existing helper:
+   `npx tsx scripts/shoot.ts evidence-page /evidence 1440 1000 dark` and `... light` — read
+   `scripts/shoot.ts` first to confirm the argument order and that it accepts a theme argument.
+   The screenshots land in `artifacts/shots/`. LOOK at them with the read tool (they are PNGs) and
+   fix anything that looks broken. Dark and light must BOTH be good.
+5. Write both docs.
+
+Work autonomously. Do not ask questions. Do not stop early. Finish with a short report: files created,
+what you verified, and anything you could not complete.

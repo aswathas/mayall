@@ -1,0 +1,110 @@
+You are building the JUDGE SHOWCASE surface of "Mayall — Web3 Exploit Forensics Console" at C:\Users\aswat\Projects\w3-forensics — a scroll-based showcase page that a hackathon judge can read in three minutes and a technical judge can dig into.
+
+# READ FIRST
+- C:\Users\aswat\Projects\w3-forensics\docs\design\RED-ROOM.md — the design contract (read it fully; it wins over any habit)
+- packages/core/src/index.ts   — ATTACK_VECTORS, ATTACK_VECTOR_LIST, types
+- packages/core/src/incidents.ts — INCIDENTS (16 public incidents, ~$2.39B reported losses, 5 chains)
+- packages/forensic-engine/src/detectors.ts — DETECTOR_CATALOG (10 rules with looksFor / emits / limitation)
+- packages/forensic-engine/src/scenarios.ts — SCENARIOS (6 live reproductions)
+- packages/web/app/globals.css  — the token system, the motion keyframes and the component classes you must use
+- packages/web/components/Panel.tsx, MetricStrip.tsx, SeverityChip.tsx, ChainChip.tsx, VectorChip.tsx, ThemeToggle.tsx
+- packages/web/lib/format.ts, lib/types.ts — existing helpers, reuse them
+
+# HARD FILE OWNERSHIP — you own EXACTLY these, create them
+packages/web/app/showcase/page.tsx
+packages/web/app/showcase/loading.tsx
+packages/web/components/ShowcaseHero.tsx
+packages/web/components/ShowcasePipeline.tsx
+packages/web/components/ShowcaseEvidence.tsx
+packages/web/components/ShowcaseHonesty.tsx
+packages/web/components/ShowcaseNumbers.tsx
+Do NOT touch anything else — other agents are editing app/bible, app/lab,
+app/cases, app/docs, app/page.tsx, app/incidents, other components/**,
+packages/core/**, packages/forensic-engine/**, contracts/**, docs/**, scripts/**.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics\packages\web
+The dev server runs on http://localhost:3000 and hot-reloads.
+
+# THE PAGE'S JOB
+A judge must grasp three things in three minutes:
+1. This is a real thing, not a mockup — the attacks actually execute.
+2. It shows the thing explorers cannot: the call-by-call reconstruction.
+3. The authors know the difference between a demonstration and a proof.
+
+Then: how to run it, and what it would take to make it production.
+
+# STRUCTURE (scroll-based, editorial — NOT a stack of identical sections)
+
+1. **Hero** — the product name is **Mayall** (use it; the wordmark in the shell
+   may still read differently — do not edit the shell). One line on what it is.
+   Two actions: "Open the live lab" (/lab) and "Read the Forensic Bible" (/bible).
+   Behind/below the hero, show ONE piece of real evidence: the reentrancy run's
+   measured facts — 83-node call tree, `withdraw()` invoked 7 times nested,
+   6 ETH drained. These are real numbers from our lab.
+   Make the hero asymmetric and confident — not a centred card.
+
+2. **The problem, in one spread** — block explorers show you THAT a transaction
+   happened. Incident responders need HOW. Use the 16 attack vectors as a
+   typographic list, arranged in columns, at a deliberate scale. Not a grid of
+   icon cards.
+
+3. **The pipeline** — what Mayall does, as a horizontal sequence with real
+   labels: reproduce in a real EVM (Foundry) → capture the call tree → diff the
+   storage → run 10 pattern detectors → write the report → export the forensic
+   bundle. Each stage names what it produces. This must read as a machine, not
+   a marketing funnel.
+
+4. **The evidence** — show the SHAPE of the output, with real values:
+   a snippet of the trace text (the nested withdraw() calls, verbatim from the
+   real run), the storage diff (slot 0x…00 before/after), the balance delta,
+   and the pattern finding with its confidence. Use a mono treatment for all of
+   it. This section is the proof — make it feel like an exhibit.
+
+5. **The numbers** — a real metric band: 16 incidents, $2.39B reported losses,
+   5 chains, 16 attack vectors modelled, 10 detectors, 6 live reproductions,
+   ~1.3s to run the entire suite. Every figure must be true — they are verified
+   in the project. Use MetricStrip, not a card grid.
+
+6. **Honesty** — a dedicated, unmissable section: the chain state is LOCAL.
+   Mayall does not fork mainnet and does not claim to. The Solidity contracts,
+   the EVM execution, the traces and the detections are real; the funds are
+   real test funds in a local simulation. A judge who spots this unprompted
+   loses trust in everything else — so state it before they have to ask. Include
+   the other honest limits: the detectors are heuristic and several key off
+   narrative vocabulary; a local reproduction of a pattern is not proof that the
+   live deployment was exploited.
+
+7. **Run it / what's next** — the three commands to run it locally, and a
+   short, credible list of what a production version would need (mainnet fork
+   replay, more chains, multi-scenario correlation, ML-assisted triage).
+
+# CRAFT REQUIREMENTS (from the loaded design skills)
+- Red Room palette via tokens only. No raw hex.
+- One authored motion moment: a single arterial sweep on first paint
+  (the `.boot-sweep` class exists in globals.css) — and calm, quiet motion
+  elsewhere. No fade-up on every section.
+- Typography: the display face for headings, mono for all data. Big, confident
+  type on the hero; dense, quiet type in the evidence section.
+- No nested panels, no gradient text, no emoji icons (lucide-react SVG only),
+  no decorative gradients outside data marks.
+- Real content, no lorem ipsum, no placeholder copy.
+- The page must work in BOTH themes (dark "red room", light "paper room") and
+  at 390px width.
+- Accessibility: real headings in order, aria-labels on icon-only controls,
+  contrast ≥ 4.5:1 for body text.
+
+# VERIFY BEFORE YOU FINISH
+1. `npx tsc --noEmit` in packages/web — ZERO errors from your files.
+2. Screenshot and LOOK:
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts showcase /showcase 1600 1100 dark`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts showcase-light /showcase 1600 1100 light`
+   `npx tsx C:\Users\aswat\Projects\w3-forensics\scripts\shoot.ts showcase-mobile /showcase 390 900 dark`
+   Fix what the screenshots show: dead space, clipped text, misalignment,
+   overflow, console errors. Iterate until it is right.
+3. Confirm every figure you published matches the verified numbers above.
+
+# DELIVERABLE (final message, max 30 lines, facts only)
+- Files created with line counts.
+- `npx tsc --noEmit` result.
+- The screenshots you took and what they revealed.
+- Any deviation from this brief, with the reason.

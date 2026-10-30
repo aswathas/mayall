@@ -1,0 +1,94 @@
+You are building the FRONTEND of "HELIX — Web3 Exploit Forensics Console", a Next.js 15 (App Router, React 19, Tailwind CSS v4) dashboard for a Web3 exploit forensics tool.
+
+# HARD FILE OWNERSHIP — do not write outside this list
+You own:
+- packages/web/app/** EXCEPT packages/web/app/api/**  (another agent owns app/api/**)
+- packages/web/components/**
+- packages/web/lib/**
+Do NOT create/modify: packages/web/app/api/**, packages/web/app/globals.css,
+packages/web/package.json, packages/web/tsconfig.json, packages/web/next.config.mjs,
+packages/web/postcss.config.mjs, packages/**, contracts/**, README.md, docs/**, scripts/**.
+Never touch packages/contracts or node_modules. Do not run `npm install` (already running).
+
+Working directory: C:\Users\aswat\Projects\w3-forensics\packages\web
+Run `cd C:\Users\aswat\Projects\w3-forensics\packages\web` before commands.
+
+# CONTEXT
+The backend (another agent) is building these API routes under packages/web/app/api/ — code against this EXACT contract, do not change it:
+
+GET  /api/status            -> { foundry: boolean, scenarios: number, artifacts: number, version: string }
+GET  /api/overview          -> { totals: { incidents: number, lossUsd: number, reproducible: number, chains: number, vectors: number },
+                                 byVector: { id: string, label: string, count: number, lossUsd: number }[],
+                                 byChain: { chain: string, count: number, lossUsd: number }[],
+                                 timeline: { month: string, lossUsd: number, count: number }[],
+                                 severity: { severity: 'critical'|'high'|'medium'|'low', count: number }[],
+                                 topIncidents: Incident[] }
+GET  /api/incidents         -> Incident[]
+GET  /api/incidents/[slug]  -> { incident: Incident | null }
+GET  /api/scenarios         -> ScenarioSpec[]
+POST /api/simulate           body { scenarioId: string } -> SimulationResult
+POST /api/simulate/all       -> { results: SimulationResult[], totalMs: number }
+GET  /api/report/[caseId]?scenario=<scenarioId> -> ForensicReport
+POST /api/report/[caseId]/narrative body { text: string } -> { ok: true, path: string }
+GET  /api/bundle/[caseId]?scenario=<scenarioId> -> application/zip download
+
+Types you must import from the workspace packages (already installed via npm workspaces):
+import type { Incident, AttackVectorId, Severity, Chain, SimulationResult, ForensicReport, PatternDetection, TraceNode, ScenarioSpec, StorageWrite, BalanceDelta, AttackStep, GasFlameNode } from '@helix/core';
+import { ATTACK_VECTORS, ATTACK_VECTOR_LIST, SEVERITY_COLORS, SEVERITY_ORDER, CHAIN_COLORS } from '@helix/core';
+(The ScenarioSpec, SimulationResult, ForensicReport, TraceNode types also live in @helix/forensic-engine. Use '@helix/core' for domain types; use '@helix/forensic-engine' for ScenarioSpec / SimulationResult / ForensicReport / TraceNode if the core import fails — but core exports them too, so prefer core.)
+
+Read packages/core/src/index.ts and packages/forensic-engine/src/scenarios.ts FIRST to get the exact field names. Do not invent fields.
+
+# WHAT TO BUILD
+A dark "SOC / forensic console" aesthetic. The design tokens already exist in packages/web/app/globals.css (read it). Use these Tailwind v4 utilities: bg-panel, bg-panel-2, bg-elevated, border-edge, text-ink, text-ink-dim, text-ink-faint, text-signal, text-threat, text-safe, text-amber-alert, font-mono, plus the .panel / .panel-header / .panel-title / .stat-value / .chip / .btn / .btn-primary / .table-row component classes. Use `recharts` for charts and `lucide-react` for icons. Use `mermaid` (client-side, dynamic import) for attack-flow diagrams.
+
+## Routes to create
+1. `app/layout.tsx` — root layout: imports './globals.css', sets metadata (title "HELIX — Web3 Exploit Forensics"), dark background, renders a sidebar/top-nav shell component (create `components/AppShell.tsx`) containing nav links: Overview (/), Incidents (/incidents), Live Lab (/lab), Docs (/docs is optional). The shell should also call /api/status and show a Foundry "engine online/offline" indicator plus scenario count. Use a client component for the status bit.
+
+2. `app/page.tsx` — OVERVIEW dashboard. Must include:
+   - A KPI row: total incidents, total tracked loss ($, formatted compact e.g. $1.51B), reproducible cases, chains covered, distinct attack vectors.
+   - Loss timeline chart (recharts AreaChart/BarChart) from `timeline`.
+   - Attack-vector breakdown (horizontal bar or treemap style) from `byVector`, labelled with ATTACK_VECTORS labels + severity weighting.
+   - Chain distribution (donut) from `byChain` coloured with CHAIN_COLORS.
+   - Severity split (small stacked bar or ring) from `severity` using SEVERITY_COLORS.
+   - "Top incidents by loss" table from `topIncidents` linking to /cases/[slug].
+   - A right-hand "Live engine" panel showing foundry status and a link/CTA to /lab.
+
+3. `app/incidents/page.tsx` — full incident registry: a filterable, sortable table (search by name/target, filter by chain, filter by vector, sort by loss/date). Show severity chip, chain chip, vector chips, loss, date, and a "REPRODUCIBLE" badge when incident.reproducible is true. Filter state in URL query params so the view is shareable.
+
+4. `app/cases/[slug]/page.tsx` — CASE FILE. Fetch /api/incidents/[slug]. Layout:
+   - Header: incident name, chain, date, severity, total loss, actor addresses with role badges (attacker/victim), reference links.
+   - Left column: summary + root cause, "attack sequence" narrative, a timeline of the known txs (hashes, mono font, truncated).
+   - Right column: attack-vector chips with descriptions from ATTACK_VECTORS, loss by vector, and a "Reproduce locally" CTA that links to /lab?scenario=<incident.scenarioId> when incident.reproducible is true, otherwise an explanation that no local PoC exists.
+   - If incident.reproducible, render a LIVE panel: a "Run simulation" button that POSTs /api/simulate { scenarioId: incident.scenarioId } and renders the real SimulationResult — the trace tree, gas flame, storage diff table, pattern findings and the report link. This is the centrepiece: the case page must show a REAL forge execution, not canned data.
+
+5. `app/cases/[slug]/report/page.tsx` — FORENSIC REPORT view: renders the ForensicReport from /api/report/[slug]?scenario=<id>: title/meta header, executive summary, each section as a styled block, pattern findings list with confidence bars and evidence bullets, loss table, and a "Download forensic bundle" button hitting /api/bundle/[slug]?scenario=<id>. Also render the Mermaid attack-flow diagram from findings[].mermaid.
+
+6. `app/lab/page.tsx` — LIVE LAB. This is the demo stage. Must include:
+   - A scenario picker (6 scenarios from /api/scenarios) as cards showing title, vector, contract name, description, and the "lookFor" checklist.
+   - A "RUN FULL SUITE" button that POSTs /api/simulate/all and shows a per-scenario progress list with pass/fail, duration, loss.
+   - Per-scenario "Run" buttons (POST /api/simulate) with a live-ish progress state (elapsed timer, status).
+   - A RESULTS AREA with tabs: TRACE (collapsible call-tree viewer rendering TraceNode with depth indentation, contract/function, gas, value; expand/collapse), GAS FLAME (recharts horizontal bar of flame nodes by gas share), STORAGE DIFF (side-by-side before/after table with changed rows highlighted), BALANCES (delta table with +/- colouring), PATTERNS (findings with confidence + evidence), RAW (forge stdout/stderr in a mono block).
+   - A prominent "Generate forensic report" button → GET /api/report/lab-<scenarioId>?scenario=<id> then navigate to /cases/... OR render inline. Since the lab case has no incident, render the report inline in a modal/section.
+   - A "Download forensic bundle" button.
+
+7. `components/` — split into small components with one concern each, e.g. TraceViewer.tsx, GasFlameChart.tsx, StorageDiffInspector.tsx, PatternReport.tsx, BalanceTimeline.tsx, IncidentTable.tsx, StatCard.tsx, SeverityChip.tsx, ChainChip.tsx, VectorChip.tsx, MermaidDiagram.tsx, AppShell.tsx, LiveSimPanel.tsx.
+
+## ENGINEERING RULES
+- All data-fetching components are client components ('use client') using fetch in useEffect with a loading skeleton and an error state. The dashboard must never crash when the API returns empty arrays.
+- Format money compactly ($1.51B, $69.3M), format wei to ETH with up to 6 decimals, truncate addresses as 0x1234…abcd.
+- Make it genuinely good-looking: consistent 4px spacing scale, uppercase mono micro-labels, subtle borders, no default browser widgets left unstyled.
+- Types must be correct — no `any` in exported props. If a field genuinely does not exist, re-read the source file rather than guessing.
+- Use relative-time/date formatting with Intl.
+
+# VERIFY BEFORE YOU FINISH
+1. `npx tsc --noEmit` in packages/web — must report ZERO errors. Fix every error you introduced. (Ignore errors originating from files you do not own, e.g. app/api/**, but report them.)
+2. `npm run build` in packages/web — it must succeed. If the build fails only because app/api routes do not exist yet (the other agent is writing them), that is acceptable: create MINIMAL placeholder handlers for the contract above ONLY IF you must, otherwise note it. Do not create app/api files — instead verify with `npx tsc --noEmit` and `npx next lint` if available.
+
+# DELIVERABLE
+Final message, max 30 lines:
+- The list of files you created, grouped by route/component.
+- The exact output of `npx tsc --noEmit` (pass/fail + any remaining errors and their file paths).
+- The result of `npm run build` (pass/fail, and the reason for any failure).
+- Any deviation from this spec, with the reason.
+Facts only. No prose padding.

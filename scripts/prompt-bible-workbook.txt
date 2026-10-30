@@ -1,0 +1,141 @@
+# BRIEF — FORENSIC BIBLE BUILT FROM THE REAL WORKBOOK (data/bible/forensic-bible.json)
+
+You are one of several parallel agents in `C:\Users\aswat\Projects\w3-forensics`.
+The product is **Mayall** — a Web3 exploit forensics tool.
+
+There is a REAL, rich "Full Forensic Bible (v2).xlsx" workbook. It has been dumped to
+`data/bible/forensic-bible.json` — 14 sheets, one JSON array per sheet (each row is an array of
+string cells; row 0 of each sheet is a title/disclaimer banner, row 1 is the header row):
+
+| Sheet | Rows | What it is |
+|---|---|---|
+| `00 Architecture Overview` | 14 | The layered detection pipeline: Layer 0 Raw Ingestion → 0.5 ABI Normalization → 1 Derived Logs → 2 Detection Signals → 3 Attack Pattern Classification → 4 Reporting. Each row: Layer / Name / Input / Output / Purpose / Scripts Needed |
+| `01 Raw Logs Catalog` | 13 | The 8 raw NDJSON evidence files (block_headers, transactions_raw, call_traces_raw, storage_diffs, balance_diffs, event_logs_raw, ...) with their purpose and integrity rule |
+| `02 Derived Logs` | 39 | 36 derived NDJSON files that turn raw evidence into facts |
+| `03 Detection Signals` | 55 | **54 detection signals**: Family / Signal Name / What It Detects / Threshold-Logic / Derived Logs Needed / Prerequisite Signal / Attack Patterns Fed / Confidence Weight |
+| `04 Attack Pattern Catalog` | 39 | **37 attack patterns in 8 families**: Family / Attack Name / Simple Meaning / Attack Type / Min Signals + Threshold / Correlated Signals / Derived Logs / Raw Foundation / Real World Example |
+| `05 Signal → Attack Mapping` | 54 | signal → attack pattern edges |
+| `06 Derived → Signal Mapping` | 33 | derived log → signal edges |
+| `07 Fail Cases + Edge Cases` | 14 | where the pipeline breaks and what to do |
+| `08 Build Order + Dependencies` | 50 | the build order of the whole system |
+| `09 Known Address Registry` | 16 | known addresses |
+| `10 Real World Walkthroughs` | 27 | end-to-end worked examples |
+| `11 Glossary` | 30 | term definitions |
+| `12 Coverage Summary` | 11 | coverage counts |
+| `13 Client Checklist` | 26 | the client engagement checklist (requirements, why needed, impact if missing) |
+
+Your job: turn this into a first-class, browsable **knowledge base inside the site** — the Forensic
+Bible — and make it the intellectual backbone of the product.
+
+READ FIRST:
+1. `docs/design/RED-ROOM.md` — the authoritative design contract. Every rule binds you.
+2. `packages/web/app/globals.css` — the token system. TOKENS ONLY, no raw hex in components.
+3. `packages/web/app/api/_lib.ts` — API conventions.
+4. `packages/core/src/index.ts` — our 16-vector taxonomy, severity model, chain model.
+5. `packages/forensic-engine/src/detectors.ts` — our 10 detectors + `DETECTOR_CATALOG`.
+
+## YOUR EXCLUSIVE FILE OWNERSHIP
+You own and may create/modify ONLY:
+- `packages/web/lib/bible/**`   (new directory: typed loader + query helpers)
+- `packages/web/app/bible/**`   (the whole Bible section)
+- `packages/web/components/Bible*.tsx`
+- `packages/web/app/api/bible/**`
+- `docs/forensic-bible.md`
+
+DO NOT edit anything else. Other agents own the rest of the app. If you need a change elsewhere,
+do NOT make it — note it in your final report.
+
+## WHAT TO BUILD
+
+### 1. A typed loader: `packages/web/lib/bible/`
+- `types.ts` — TypeScript interfaces for the workbook shape (Signal, AttackPattern, RawLog,
+  DerivedLog, Mapping, Walkthrough, GlossaryTerm, ChecklistItem, BuildStep, KnownAddress, …).
+  Parse the workbook JSON shape ONCE here — the sheets have slightly ragged columns, so the parser
+  must be tolerant (title banner row, then header row, then data rows; some cells are empty).
+- `index.ts` — `loadBible()` (reads the JSON from disk at build/server time; the file is at the
+  repo root `data/bible/forensic-bible.json` — resolve the path relative to the repo root; read
+  `packages/forensic-engine/src/foundry.ts` `repoRoot()` for the existing repo-root discovery
+  pattern and reuse that approach), plus query helpers:
+  `listSignals()`, `getSignal(name)`, `listPatterns()`, `getPattern(name)`, `patternsByFamily()`,
+  `signalsForPattern(name)`, `patternsForSignal(name)`, `listWalkthroughs()`, `listGlossary()`,
+  `listChecklist()`, `listFailCases()`, `listBuildOrder()`, `listKnownAddresses()`, `architecture()`,
+  `coverageSummary()`, and `stats()`.
+- `stats()` must return the REAL counts from the workbook (54 signals, 37 patterns, 8 families, …) —
+  compute them from the data, never hardcode.
+
+### 2. API: `packages/web/app/api/bible/**`
+- `GET /api/bible` → index: sheet names, per-sheet row counts, families, the 8 attack families with
+  their pattern counts, the signal families, coverage summary, and a `stats` object.
+- `GET /api/bible/patterns` → all patterns (with their correlated signals resolved to names).
+- `GET /api/bible/patterns/[name]` → one pattern + its signals + the derived logs it needs.
+- `GET /api/bible/signals` → all 54 signals.
+- `GET /api/bible/signals/[name]` → one signal + the patterns it feeds.
+- `GET /api/bible/walkthroughs` → the real-world walkthroughs.
+- `GET /api/bible/glossary` → glossary terms.
+- `GET /api/bible/checklist` → the client checklist.
+- `GET /api/bible/architecture` → the layered pipeline from sheet 00.
+Follow the conventions in `packages/web/app/api/_lib.ts`.
+
+### 3. UI: the Bible section under `packages/web/app/bible/**`
+- `/bible` — the index. A real, dense, navigable knowledge base, NOT a marketing page:
+  - the 4-layer architecture (Raw → Derived → Signals → Patterns → Report) as a horizontal
+    layered diagram (SVG or CSS grid — tokens only, no emoji, lucide-react icons only)
+  - the 8 attack families as a browsable grid, each with its pattern count and the total signals
+  - a searchable signal catalogue (client-side filter over the 54 signals, showing Family, Signal,
+    What It Detects, Threshold/Logic, Prerequisite, Confidence Weight)
+  - a searchable attack-pattern catalogue (Family, Attack, Meaning, Type, Min Signals + Threshold,
+    Correlated Signals, Real World Example)
+  - links to the walkthroughs, glossary, checklist, fail cases, build order, address registry
+- `/bible/patterns` — the 37 patterns, filterable by family, each card opening a detail page.
+- `/bible/patterns/[name]` — one pattern: meaning, attack type, the minimum-signal threshold, the
+  correlated signals (as links), the derived logs it needs, the raw foundation, the real-world
+  example, and — critically — a "Mayall coverage" row that states which of our 10 detectors and
+  which of our 16 vectors relate to it, and honestly states where Mayall does NOT yet cover it.
+- `/bible/signals` — the 54 signals with the same search/filter treatment.
+- `/bible/signals/[name]` — one signal: what it detects, threshold logic, prerequisite, the patterns
+  it feeds, and the Mayall equivalent (our detector) or an honest "not implemented in Mayall" state.
+- `/bible/walkthroughs` — the end-to-end worked examples.
+- `/bible/glossary` — the glossary.
+- `/bible/checklist` — the client engagement checklist, rendered as a real checklist.
+- `/bible/pipeline` — the layered architecture in full, plus sheet 08's build order.
+- Every page: dark-theme-first AND correct in light theme, tokens only, 4.5:1 contrast, 44px touch
+  targets, aria-labels on icon-only buttons, real `<button>`/`<a>`, focus rings never removed,
+  `prefers-reduced-motion` kills all motion.
+- The existing `app/bible/**` files may already exist from another agent — you are taking over that
+  directory. KEEP anything that already works and matches the design contract; rewrite what is
+  generic. Use `Panel`, `MetricStrip`, `EmptyState`, `SeverityChip` (read their props first) rather
+  than inventing new primitives. You may import `MermaidDiagram` for the pipeline diagram.
+- IMPORTANT: the Bible must NOT be a wall of raw spreadsheet cells. Every sheet must be presented
+  with real information design: hierarchy, filtering, and clear typographic hierarchy — the workbook
+  content must be legible and navigable, not dumped.
+
+### 4. `docs/forensic-bible.md`
+A real document: the workbook's structure, the 14 sheets and what each is for, how Mayall maps onto
+the workbook's Layer 0 → Layer 4 model, the honest gaps (which Bible signals Mayall does not yet
+compute), and how to regenerate `data/bible/forensic-bible.json` from the xlsx (include the exact
+Python script that produced it, using `openpyxl`).
+
+## HARD CONSTRAINTS
+- Do NOT `npm install`. No new dependencies. `lucide-react` for icons. No emoji.
+- `rm` is policy-gated on this machine — overwrite in place instead of deleting.
+- `npx tsc --noEmit` must pass with zero errors in your files.
+- Never fabricate: every signal name, pattern name, threshold, confidence weight and example must
+  come from the JSON. If the workbook and our code disagree, show BOTH and say so.
+- The product name is **Mayall**. Do not write "HELIX" in user-visible copy.
+
+## VERIFICATION (all of it, before you finish)
+1. `npx tsc --noEmit` — zero errors in your files.
+2. `Invoke-RestMethod http://localhost:3000/api/bible` returns real data (new routes may need a few
+   seconds to compile — retry).
+3. `Invoke-RestMethod http://localhost:3000/api/bible/patterns` returns 37 patterns and
+   `.../signals` returns 54 signals. If the counts differ, your parser is wrong — fix the parser,
+   do not adjust the expected number.
+4. Fetch `/bible`, `/bible/patterns`, `/bible/signals`, `/bible/glossary` and confirm HTTP 200.
+5. Screenshot `/bible` and `/bible/patterns` in BOTH themes:
+   `npx tsx scripts/shoot.ts bible /bible 1440 1100 dark` and `... light` (read `scripts/shoot.ts`
+   first for the exact argument order). READ the PNGs with the read tool and fix anything broken.
+   Dark and light must BOTH look good.
+6. Write `docs/forensic-bible.md`.
+
+Work autonomously. Do not ask questions. Do not stop early. Finish with a short report: files created,
+the real counts you parsed, what you verified, and anything you could not complete.

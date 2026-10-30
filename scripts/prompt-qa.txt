@@ -1,0 +1,117 @@
+You are building the QUALITY ASSURANCE harness for "Mayall — Web3 Exploit Forensics Console", a Next.js 15 app at C:\Users\aswat\Projects\w3-forensics.
+
+# HARD FILE OWNERSHIP — you own EXACTLY these, create them
+packages/web/playwright.config.ts
+packages/web/tests/smoke.spec.ts
+packages/web/tests/a11y.spec.ts
+packages/web/tests/lab.spec.ts
+packages/web/tests/theme.spec.ts
+packages/web/fixtures/scenarios.ts          (test fixtures)
+scripts/qa/run-qa.mjs                      (orchestrates: playwright + axe + screenshots)
+scripts/qa/README.md
+Do NOT modify any app source (app/**, components/**, lib/**), packages/core/**,
+packages/forensic-engine/**, contracts/**, docs/**, or other scripts/** files.
+Other agents are actively editing the app right now — if you find a defect in the
+app, REPORT it in your final message with the file and the fix you would make.
+Do not edit app code.
+
+Working directory: C:\Users\aswat\Projects\w3-forensics
+The dev server may or may not be running. Your QA script must be able to START it
+if it is not: run `npm run dev --workspace @helix/web` from the repo root and wait
+for http://localhost:3000 to answer (poll up to 90s). If a server is already
+listening, reuse it. Always stop only the server you started.
+
+# WHAT TO BUILD
+
+## playwright.config.ts
+- testDir: './tests'
+- baseURL: 'http://localhost:3000'
+- Use the system Chrome (channel: 'chrome') — Chromium is NOT downloaded in this
+  environment. If `channel: 'chrome'` fails, fall back to the local Chrome
+  executable path:
+  'C:/Program Files/Google/Chrome/Application/chrome.exe'
+- Workers: 1 (the app is a dev server; parallel workers thrash it).
+- reporter: [['list']] plus a json output to `test-results/`.
+- timeout 60s per test, expect timeout 15s.
+
+## tests/smoke.spec.ts
+Every route must render without a server error or a console error:
+- '/', '/incidents', '/lab', '/docs', '/cases/curve-v2-reentrancy',
+  '/cases/curve-v2-reentrancy/report'
+For each: assert the response status is 200, the main heading (h1) exists and is
+non-empty, and NO console error was emitted during navigation. Collect console
+errors per page and fail the test with the collected list — that is the most
+valuable assertion in the whole suite.
+Also assert the API routes return 200 and valid JSON:
+/api/status, /api/overview, /api/incidents, /api/scenarios.
+Assert /api/overview has totals.incidents > 0 and byVector is a non-empty array.
+
+## tests/a11y.spec.ts
+Use `@axe-core/playwright` to scan every route.
+- Install the dependency you need (`npm install -D @axe-core/playwright playwright-core` from packages/web — this is the ONLY install you may run; never run a workspace-wide install).
+- Run axe with the WCAG 2.1 A and AA tags.
+- Fail on 'critical' and 'serious' violations. Write the violation details into
+  the test output (rule id, impact, and the offending selector) so the report is
+  actionable.
+- Note: @axe-core/playwright may need a full playwright install; if the
+  `playwright` package (not playwright-core) is required, install it with
+  `npm install -D playwright` and set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 so no
+  browser is downloaded (use channel 'chrome').
+
+## tests/lab.spec.ts
+The live simulation path — the most important flow in the product.
+- Go to '/lab'.
+- Find the control that runs a single scenario (a button whose accessible name
+  mentions "run" near the scenario list). If the UI exposes a scenario query
+  parameter, use '/lab?scenario=reentrancy'.
+- Click it and assert that within 60 seconds the results appear: the page shows
+  the scenario title, a loss figure matching /ETH/, and the pattern findings
+  (a confidence percentage).
+- Assert the raw forge output is retrievable somewhere on the page (a "Raw"
+  tab/panel containing "forge" or "[PASS]").
+- Screenshot the running lab to 'test-results/lab-run.png'.
+- IMPORTANT: this test depends on Foundry being installed at
+  <repo>/.tools/foundry. It is. If a simulation fails because the toolchain is
+  missing, fail the test with that message — do not skip silently.
+
+## tests/theme.spec.ts
+- Load '/', read the initial `data-theme` attribute on <html>.
+- Find the theme toggle button (aria-label contains "theme" — check
+  aria-label case-insensitively).
+- Click it and assert `data-theme` flipped and the value persisted to
+  localStorage under the key 'mayall-theme'.
+- Reload the page and assert the theme survived (no flash of the wrong theme).
+- Screenshot both themes to 'test-results/theme-dark.png' and
+  'test-results/theme-light.png'.
+- Also assert there is no horizontal overflow at 390px viewport width
+  (document.documentElement.scrollWidth <= window.innerWidth + 1).
+
+## scripts/qa/run-qa.mjs
+A Node script that:
+1. Ensures the dev server is up (starts it if needed, records that it started it).
+2. Runs `npx playwright test` in packages/web.
+3. Runs the axe scan (it is part of the suite).
+4. Writes a summary to 'test-results/qa-summary.md' with: each test's status,
+   the axe violations found (if any), and the console errors collected per route.
+5. Stops the dev server only if it started it.
+6. Exits non-zero if any test failed.
+It must print a clear, readable report — this is the artefact a human reads.
+
+## scripts/qa/README.md
+How to run the QA suite, what each spec covers, how to interpret failures, and
+how to add a route to the smoke matrix.
+
+# VERIFY BEFORE YOU FINISH
+1. Run `node scripts/qa/run-qa.mjs` from the repo root.
+2. It must complete. If the app has genuine defects, the tests SHOULD fail —
+  that is correct behaviour, and you report the failures. But the harness itself
+  must work: no crashes, no missing modules, no config errors.
+3. Report the real output: how many tests passed, which failed, and the exact
+  reason for each failure.
+
+# DELIVERABLE (final message, max 30 lines, facts only)
+- Files created with line counts.
+- The real QA run output: passed/failed counts per spec.
+- A list of app defects found (file, symptom, suggested fix) — sorted by
+  severity. This list is the most valuable part of your work.
+- Any deviation from this brief, with the reason.
