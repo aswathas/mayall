@@ -33,7 +33,18 @@ async function main(): Promise<void> {
 
   const url = `http://localhost:3000${route}`;
   await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
-  await page.waitForTimeout(2500);
+  // The console fetches its data client-side; wait for the skeleton placeholders
+  // to clear so the shot shows real numbers rather than loading blocks.
+  await page
+    .waitForFunction(
+      () => {
+        const skeletons = document.querySelectorAll('[data-loading="true"]');
+        return skeletons.length === 0;
+      },
+      { timeout: 30000 },
+    )
+    .catch(() => undefined);
+  await page.waitForTimeout(4000);
   const file = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: file, fullPage: true });
 

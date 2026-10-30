@@ -226,8 +226,16 @@ export default function IntroPage() {
             </div>
 
             <figcaption className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-              <span className="mono text-[0.56rem] uppercase tracking-[0.12em] text-ink-faint">
-                Fourteen nested call frames · 7 withdrawals · 6 ETH
+              <span className="mono flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.56rem] uppercase tracking-[0.12em] text-ink-faint">
+                <span>Fourteen nested call frames · 7 withdrawals · 6 ETH</span>
+                <a
+                  href="/intro/mayall-reel.mp4"
+                  download
+                  className="inline-flex min-h-11 items-center gap-1.5 text-ink-dim transition-colors duration-100 hover:text-arterial"
+                >
+                  <Download className="h-3 w-3" aria-hidden="true" />
+                  Forensic reel · 26 s MP4
+                </a>
               </span>
               <a
                 href={INTRO_MP4_SRC}
