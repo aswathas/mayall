@@ -13,8 +13,7 @@ coverage/
 .env.*
 *.log
 .DS_Store
-packages/web/public/intro/
-!packages/web/public/intro/
+packages/web/public/intro/*.tmp
 contracts/out/
 contracts/cache/
 contracts/lib/
