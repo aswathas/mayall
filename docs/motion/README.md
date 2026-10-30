@@ -96,11 +96,12 @@ sentence, storage values (`totalDeposited` 10→11 ETH, `totalWithdrawn` 0→7 E
 `balances[attacker]` 0→0), balance movements (vault 10→4, attacker 1→7, victim EOA 990→990),
 and `chain-of-custody.json` (11 files, 225 ms, trace.txt 21,053 B, sha256 prefix).
 
-**One correction to the brief:** the brief says “83-node trace”. The real parser
-(`packages/forensic-engine/src/trace-parser.ts`) returns **82** nodes for this trace, and
-`artifacts/summary.json` reports `"traceNodes": 82`; `report/report.md` reports 82 gas-flame
-nodes. The reel states **82** (`175 lines → 82 nodes`) because it may not state a number absent
-from the data. Everything else in the brief's measured-facts list matches the files.
+**Trace-node figure (re-measured after the artifacts were regenerated):** the parser
+(`packages/forensic-engine/src/trace-parser.ts`) returns **83** nodes for the reentrancy
+trace, `artifacts/summary.json` reports `"traceNodes": 83`, and the bundle's
+`evidence/trace.txt` is **176** lines. An earlier pass read **82** from a stale bundle that
+predated the last contract fix; the reel was re-rendered so the on-screen figures match the
+current artifacts.
 
 ## The two weakest moments (and the fix for another round)
 

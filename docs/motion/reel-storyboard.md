@@ -14,10 +14,11 @@ rules, no decorative gradients, no glow.
 6 ETH drained · `withdraw()` 7× nested · 175 trace lines → 82 parsed nodes · Reentrancy
 confidence 97% · vault 10 → 4 ETH (−6) · attacker 1 → 7 ETH (+6) · bundle 11 files, 225 ms.
 
-> Note: the brief's "83-node trace" does not match the shipped data. The parser in
-> `packages/forensic-engine/src/trace-parser.ts` returns **82** nodes for this trace, and
-> `artifacts/summary.json` reports `"traceNodes": 82`; `report/report.md` reports 82 gas-flame
-> nodes. The reel states **82** because the reel may not state a number absent from the data.
+> Note: the trace-node figure was re-measured after the artifacts were regenerated.
+> The parser in `packages/forensic-engine/src/trace-parser.ts` returns **83** nodes for the
+> reentrancy trace, `artifacts/summary.json` reports `"traceNodes": 83`, and the report's
+> gas-flame node count matches. An earlier pass read **82** from a stale bundle that predated
+> the last contract fix; the reel now states **83**, which is what the current artifacts say.
 
 ---
 

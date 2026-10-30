@@ -37,7 +37,7 @@ export const TRACE_LADDER: TraceFrame[] = [
 
 export const WITHDRAW_FRAMES = TRACE_LADDER.filter((node) => node.kind === 'withdraw');
 export const WITHDRAW_COUNT = WITHDRAW_FRAMES.length; // 7
-export const TRACE_NODE_COUNT = 82;
+export const TRACE_NODE_COUNT = 83;
 export const TARGET_GAS = 195418;
 export const DEPTH_MAX = 9;
 
@@ -99,7 +99,7 @@ export const SCENARIO_FACTS: ScenarioFact[] = [
     vectorId: 'reentrancy',
     chain: 'Ethereum',
     lossEth: 6,
-    traceNodes: 82,
+    traceNodes: 83,
     detections: 1,
     topDetection: 'Reentrancy',
     confidence: 0.97,

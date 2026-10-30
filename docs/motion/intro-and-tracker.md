@@ -196,12 +196,12 @@ node scripts/remotion-render.mjs
 
 ## 7. Notes and limits
 
-- The brief this film was built from quoted an **83-node** trace figure. That
-  number was wrong: it came from the brief, not from a measurement. The real
-  parser (`packages/forensic-engine/src/trace-parser.ts`) returns **82** nodes
-  for the reentrancy trace, `artifacts/summary.json` reports `"traceNodes": 82`,
-  and `report/report.md` reports 82 gas-flame nodes. The film, the `/intro`
-  table and the pitch deck all state **82**.
+- The trace-node figure was re-measured after the artifacts were regenerated. The
+  parser (`packages/forensic-engine/src/trace-parser.ts`) returns **83** nodes for the
+  reentrancy trace, `artifacts/summary.json` reports `"traceNodes": 83`, and the
+  report's gas-flame node count matches. An earlier pass read **82** from a stale
+  bundle that predated the last contract fix. The film, the `/intro` table and the
+  pitch deck all state **83**, which is what the current artifacts say.
 - `/api/custom/stream` is a run trigger, not a passive status feed: connecting
   executes forge. The tracker therefore treats it as an explicit live run and
   uses `/api/simulate` for the scenario replay.

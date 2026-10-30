@@ -51,7 +51,7 @@ If you only get 30 seconds, say this:
 > Every block explorer tells you *that* an exploit happened. Mayall tells you
 > *how*. It runs a real Solidity exploit proof-of-concept in a local Foundry EVM,
 > reconstructs the call-by-call tree and storage diff, and scores the mechanism
-> with ten detectors. The reentrancy run captures 82 call-tree nodes, with the
+> with ten detectors. The reentrancy run captures 83 call-tree nodes, with the
 > same `withdraw()` function nested seven times, draining 6 ETH in one
 > transaction. It exports a ZIP with a SHA-256 chain-of-custody manifest.
 > The execution is real; the chain state is local, and we say so. Six scenarios,
@@ -94,5 +94,5 @@ button; all six scenarios take about 1.3 seconds.
 - The print stylesheet produces eight pages at 1280 × 720 with `transition:
   none`, full opacity and `print-color-adjust: exact`.
 - Every figure in the deck matches the verified fact list: 6/40/50/250/50/60
-  ETH, 97/90/82/90/93/92%, 82 nodes, 7 nested calls, 6 ETH, ~1.3 s, 16
+  ETH, 97/90/82/90/93/92%, 83 nodes, 7 nested calls, 6 ETH, ~1.3 s, 16
   incidents, 5 chains, ~$2.39B, 10 reproduced, 16 vectors, 10 detectors.

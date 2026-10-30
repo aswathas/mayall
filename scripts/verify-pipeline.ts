@@ -40,7 +40,7 @@ interface Row {
 }
 
 async function main(): Promise<void> {
-  console.log('HELIX pipeline verification');
+  console.log('Mayall pipeline verification');
   console.log('root:', root);
   console.log('');
 

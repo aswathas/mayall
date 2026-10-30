@@ -26,7 +26,7 @@ const STAGES: Stage[] = [
     name: 'Capture',
     icon: GitBranch,
     does: 'The trace parser walks the depth-indented call tree, frame by frame.',
-    produces: '82 nodes · 7 × withdraw()',
+    produces: '83 nodes · 7 × withdraw()',
   },
   {
     name: 'Diff',

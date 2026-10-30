@@ -61,8 +61,8 @@ const PIPELINE: Step[] = [
     icon: GitBranch,
     label: 'Parsed',
     title: 'Call tree rebuilt',
-    body: 'The trace parser reconstructs every frame, its depth, gas attribution and value movement. The re-entrancy reproduction yields 82 nodes.',
-    meta: '82 nodes · reentrancy',
+    body: 'The trace parser reconstructs every frame, its depth, gas attribution and value movement. The re-entrancy reproduction yields 83 nodes.',
+    meta: '83 nodes · reentrancy',
   },
   {
     icon: ScanSearch,
