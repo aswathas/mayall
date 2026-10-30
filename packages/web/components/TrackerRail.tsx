@@ -47,7 +47,7 @@ export function TrackerRail({
   return (
     <Panel
       title="Scenario status"
-      subtitle="six reproductions · live engine status"
+      subtitle="six reproductions"
       flush
       action={
         <span className="mono flex items-center gap-1.5 text-[0.56rem] uppercase tracking-[0.12em] text-ink-faint">
