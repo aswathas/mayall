@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { BookOpen, FlaskConical } from 'lucide-react';
 
 const MEASURED = [
-  { label: 'Call tree', value: '83 nodes' },
+  { label: 'Call tree', value: '82 nodes' },
   { label: 'withdraw() nested', value: '7 times' },
   { label: 'Top finding confidence', value: '0.97' },
 ];

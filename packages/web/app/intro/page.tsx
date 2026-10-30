@@ -61,8 +61,8 @@ const PIPELINE: Step[] = [
     icon: GitBranch,
     label: 'Parsed',
     title: 'Call tree rebuilt',
-    body: 'The trace parser reconstructs every frame, its depth, gas attribution and value movement. The re-entrancy reproduction yields 83 nodes.',
-    meta: '83 nodes · reentrancy',
+    body: 'The trace parser reconstructs every frame, its depth, gas attribution and value movement. The re-entrancy reproduction yields 82 nodes.',
+    meta: '82 nodes · reentrancy',
   },
   {
     icon: ScanSearch,
@@ -132,7 +132,7 @@ const ROUTES: RouteLink[] = [
   { href: '/attack-lab', label: 'Attack lab', body: 'Write and run a custom exploit against the local harness.', icon: Play },
   { href: '/tracker', label: 'Live attack tracker', body: 'Watch one run in flight: gas, depth, balances and trace feed.', icon: Radar },
   { href: '/lab', label: 'Live lab', body: 'Run any of the six reproductions and inspect the evidence.', icon: FlaskConical },
-  { href: '/historical', label: 'Historical incidents', body: 'Sixteen public exploits, the loss and the attack classes.', icon: History },
+  { href: '/historical', label: 'Historical incidents', body: 'Public exploits, the loss and the attack classes.', icon: History },
   { href: '/bible', label: 'Exploit bible', body: 'The attack-vector taxonomy and what an investigator looks for.', icon: BookOpen },
   { href: '/showcase', label: 'Showcase', body: 'The pipeline and the evidence, end to end.', icon: Layers },
   { href: '/docs', label: 'Documentation', body: 'How the engine works and what the evidence does not prove.', icon: Boxes },
@@ -250,7 +250,7 @@ export default function IntroPage() {
             { label: 'Tracked loss', value: REGISTRY.lossUsd, hint: 'reported at disclosure', tone: 'threat' },
             { label: 'Incidents', value: String(REGISTRY.incidents), hint: 'in the registry' },
             { label: 'Chains', value: String(REGISTRY.chains), hint: 'execution environments' },
-            { label: 'Attack vectors', value: String(REGISTRY.vectors), hint: 'distinct classes' },
+            { label: 'Attack vectors', value: String(REGISTRY.vectors), hint: 'in the taxonomy' },
             { label: 'Detectors', value: String(REGISTRY.detectors), hint: 'heuristics on every trace' },
             {
               label: 'Reproductions',

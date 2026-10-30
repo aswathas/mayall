@@ -147,7 +147,7 @@ export function ShowcaseEvidence() {
           </ol>
 
           <p className="mono border-t border-edge px-4 py-3 text-[0.58rem] uppercase tracking-[0.12em] text-ink-dim">
-            83 nodes parsed · 7 nested withdrawals · deepest frame 306 gas
+            82 nodes parsed · 7 nested withdrawals · deepest frame 306 gas
           </p>
         </div>
 

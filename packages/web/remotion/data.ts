@@ -37,7 +37,7 @@ export const TRACE_LADDER: TraceFrame[] = [
 
 export const WITHDRAW_FRAMES = TRACE_LADDER.filter((node) => node.kind === 'withdraw');
 export const WITHDRAW_COUNT = WITHDRAW_FRAMES.length; // 7
-export const TRACE_NODE_COUNT = 83;
+export const TRACE_NODE_COUNT = 82;
 export const TARGET_GAS = 195418;
 export const DEPTH_MAX = 9;
 
@@ -163,8 +163,8 @@ export const SCENARIO_FACTS: ScenarioFact[] = [
 
 /** Registry totals derived from packages/core/src/incidents.ts. */
 export const REGISTRY = {
-  incidents: 16,
-  lossUsd: '$2.39B',
+  incidents: 17,
+  lossUsd: '$8.69B',
   chains: 5,
   vectors: 16,
   detectors: 10,

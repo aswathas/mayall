@@ -28,8 +28,10 @@ const out = execFileSync(
 const parsed = parseForgeTrace(out);
 const nodes = flattenTrace(parsed.root);
 const depths = nodes.map((n) => n.depth ?? 0);
-console.log(`${scenario}: parsed nodes = ${nodes.length}`);
+console.log(`${scenario}: parsed.nodes = ${parsed.nodes.length}`);
+console.log(`  flattenTrace(root) = ${nodes.length}`);
 console.log(`  max depth = ${Math.max(...depths)}`);
-console.log(
-  `  withdraw frames = ${nodes.filter((n) => /withdraw/i.test(String(n.label ?? n.fn ?? ''))).length}`,
-);
+const flatIds = new Set(parsed.nodes.map((n: any) => n.id));
+const treeIds = new Set(nodes.map((n: any) => n.id));
+const onlyFlat = [...flatIds].filter((id) => !treeIds.has(id));
+console.log(`  only in parsed.nodes: ${onlyFlat.length ? onlyFlat.join(', ') : 'none'}`);

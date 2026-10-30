@@ -30,7 +30,7 @@ a vulnerable contract plus a Foundry PoC.
 | delegatecall | 50 ETH | Delegate Call Injection | 93% |
 | selfdestruct | 60 ETH | Self Destruct / Forced Transfer | 92% |
 
-All six run in **~1.3 seconds**. The reentrancy run captures an **83-node call
+All six run in **~1.3 seconds**. The reentrancy run captures an **82-node call
 tree**, with the same `withdraw()` function invoked **7 times nested** in one
 transaction, draining **6 ETH**.
 

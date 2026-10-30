@@ -47,7 +47,7 @@ reported, 10 with a local reproduction**. Taxonomy: **16 vectors**. Detectors:
 > exploit in a local EVM, reconstructs the crime scene call by call, and
 > packages the evidence so someone else can verify it.
 
-**Point at:** the wordmark, then the live specimen plate on the right — 83
+**Point at:** the wordmark, then the live specimen plate on the right — 82
 call-tree nodes, seven nested `withdraw()` calls, 6 ETH drained, 97% confidence.
 
 **Question you expect:** *“Is this real?”*
@@ -121,7 +121,7 @@ same four panels; the deck is the clean reproduction of them.
 
 **Say:**
 
-> This is the money slide. The run captured 83 call-tree nodes. Seven of them
+> This is the money slide. The run captured 82 call-tree nodes. Seven of them
 > are the same `withdraw()` frame, each nested inside the previous one. The
 > vault starts at 10 ETH and ends at 4. Six ETH leaves in a single transaction,
 > and the storage diff shows `totalWithdrawn` moving from 0 to 6 ETH while the
@@ -139,7 +139,7 @@ vault-balance rows, then the red 83-tick field at the bottom.
 **Answer:** “Because the receiver callback calls back into `withdraw()` before
 the first call returns. The balance is only zeroed after the external call.”
 
-**Question you expect:** *“Are those 83 nodes a real tree or a mock?”*
+**Question you expect:** *“Are those 82 nodes a real tree or a mock?”*
 **Answer:** “Real. The parser builds it from `forge test -vvvv` output; the
 node count is the captured tree for this run.”
 
