@@ -82,7 +82,7 @@ function RegistryView() {
       <header className="flex flex-col gap-2">
         <h1 className="display text-[1.9rem] leading-tight text-ink sm:text-[2.35rem]">Incident registry</h1>
         <p className="max-w-[75ch] text-sm leading-relaxed text-ink-dim">
-          Every tracked exploit with its target, chain and attack vectors, and whether HELIX holds a working
+          Every tracked exploit with its target, chain and attack vectors, and whether Mayall holds a working
           Foundry reproduction. Filters live in the URL, so a narrowed view can be shared as a link.
         </p>
       </header>

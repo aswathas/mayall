@@ -347,7 +347,7 @@ export const INCIDENTS: Incident[] = [
       { address: '0xe5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718', label: 'Escrow Vault v1', role: 'victim' },
     ],
     txs: ['0xd4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c'],
-    references: [{ label: 'HELIX local reproduction', url: '/simulate?scenario=selfdestruct' }],
+    references: [{ label: 'Mayall local reproduction', url: '/simulate?scenario=selfdestruct' }],
     reproducible: true,
     scenarioId: 'selfdestruct',
     recovered: false,

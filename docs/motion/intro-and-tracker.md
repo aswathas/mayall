@@ -64,7 +64,7 @@ Rendered with the Chrome already on the machine
 mayall-intro.mp4
   codec_name=h264  width=1920  height=1080
   r_frame_rate=30/1  avg_frame_rate=30/1  nb_frames=450
-  duration=15.000000  size=691878
+  duration=15.000000  size=693793
 
 mayall-trace.mp4
   codec_name=h264  width=1920  height=1080
@@ -122,7 +122,9 @@ Full paths:
 - **Left rail** — all six reproductions with idle / running / complete / error
   status, measured loss, top detector and confidence. The list is fetched from
   `/api/scenarios` (polled every 10 s); engine health and artifact count come
-  from `/api/status` (polled every 5 s). Each row selects the scenario; the
+  from `/api/status` (polled every 5 s). Per-scenario run state is session-local
+  — the API exposes aggregate status, not a run queue — while the scenario list
+  and engine status are genuinely polled. Each row selects the scenario; the
   play control runs it.
 - **Main stage** — the existing `AttackReplay` component, imported unchanged.
   It draws the real call tree, the re-entrancy spiral, value travel, balances
@@ -155,7 +157,7 @@ Full paths:
 | --- | --- |
 | `npx tsc --noEmit` (from `packages/web`) | Passes: exit 0, zero errors. |
 | `npx remotion compositions` | Both compositions listed, 450/300 frames at 30 fps, 1920×1080. |
-| MP4 exists + `ffprobe` | `mayall-intro.mp4`, 691,878 bytes, 15.000 s, 30 fps, 1920×1080, 450 frames. `mayall-trace.mp4`, 938,093 bytes, 10.000 s, 30 fps, 1920×1080, 300 frames. |
+| MP4 exists + `ffprobe` | `mayall-intro.mp4`, 693,793 bytes, 15.000 s, 30 fps, 1920×1080, 450 frames. `mayall-trace.mp4`, 938,093 bytes, 10.000 s, 30 fps, 1920×1080, 300 frames. |
 | `GET /intro` | 200, HTML contains “Mayall”. |
 | `GET /tracker` | 200, HTML contains “Mayall”. |
 | Screenshots, both themes | `artifacts/shots/intro.png`, `intro-light.png`, `tracker.png`, `tracker-light.png`; inspected. No console errors. |

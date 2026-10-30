@@ -81,7 +81,7 @@ export default function OverviewPage() {
           <h1 className="display text-[1.9rem] leading-tight text-ink sm:text-[2.35rem]">Exploit landscape</h1>
           <p className="mt-2 max-w-[75ch] text-sm leading-relaxed text-ink-dim">
             Public Web3 exploits and the loss they disclosed, the attack classes behind them, and which of them
-            HELIX can reproduce in a local Foundry lab.
+            Mayall can reproduce in a local Foundry lab.
           </p>
         </div>
         <div className="col-span-12 flex items-center gap-2 lg:col-span-4 lg:justify-end">
@@ -237,7 +237,7 @@ export default function OverviewPage() {
       <footer className="border-t border-edge pt-4">
         <p className="max-w-[95ch] text-xs leading-relaxed text-ink-dim">
           Every entry is a public disclosure; loss figures are the amounts reported at the time and are rounded.
-          HELIX&rsquo;s reproductions are local Foundry simulations of the same exploit logic — they are not replays
+          Mayall&rsquo;s reproductions are local Foundry simulations of the same exploit logic — they are not replays
           of the original on-chain transactions.
         </p>
       </footer>

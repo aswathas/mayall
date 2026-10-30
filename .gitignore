@@ -4,6 +4,7 @@ out/
 dist/
 build/
 .tools/
+artifacts/
 test-results/
 graphify-out/
 coverage/
@@ -13,34 +14,9 @@ coverage/
 *.log
 .DS_Store
 packages/web/public/intro/
-
-# Agent tooling mirrors — not part of the product.
-.agents/
-.claude/
-
-# Foundry build cache (build output is already covered by `out/`).
+contracts/out/
 contracts/cache/
-
-# Vendored Foundry standard library, installed by CI (`git clone`).
-contracts/lib/forge-std/
-
-# Static export produced by `npm run build:static`. The deploy workflow uploads
-# it as a Pages artifact; it is generated output and is never committed.
+contracts/lib/
+agent/
+data/skills/
 static-export/
-
-# Nested package artifacts (screenshots, captured runs) are build output.
-packages/*/artifacts/
-
-# Local simulation evidence. Everything under artifacts/ is generated output,
-# except the small recorded scenario artifacts and bundles that the static
-# export replays on the public site. See docs/deployment.md.
-artifacts/*
-!artifacts/reentrancy.json
-!artifacts/oracle-manipulation.json
-!artifacts/access-control.json
-!artifacts/flash-loan.json
-!artifacts/delegatecall.json
-!artifacts/selfdestruct.json
-!artifacts/summary.json
-!artifacts/bundles/
-!artifacts/bundles/*.zip

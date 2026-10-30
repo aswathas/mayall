@@ -1,5 +1,5 @@
 /**
- * HELIX — Web3 Exploit Forensics
+ * Mayall — Web3 Exploit Forensics
  * Core domain model. Pure types + taxonomy, zero runtime dependencies.
  */
 
@@ -254,7 +254,7 @@ export interface Incident {
   txs: string[];
   /** Reference links. */
   references: { label: string; url: string }[];
-  /** Whether HELIX has a live local Foundry reproduction for this case. */
+  /** Whether Mayall has a live local Foundry reproduction for this case. */
   reproducible: boolean;
   /** For reproducible cases: the scenario id in the local Foundry lab. */
   scenarioId?: string;

@@ -14,7 +14,7 @@ component disagree, this document wins.
 
 **A forensic instrument in a dark lab.**
 
-HELIX is not a marketing site and not a SaaS dashboard. It is a bench
+Mayall is not a marketing site and not a SaaS dashboard. It is a bench
 instrument for reading a crime scene that happened inside an EVM. The
 reference is an autopsy room and an oscilloscope, not a fintech app: cold
 darkness, one hot signal colour, bone-white chrome that never competes with
@@ -196,7 +196,7 @@ the theme flips underneath.
 Rules:
 
 1. The theme is set on `<html data-theme="dark|light">`. `components/ThemeToggle.tsx`
-   flips it and persists to `localStorage['helix-theme']`.
+   flips it and persists to `localStorage['mayall-theme']`.
 2. `app/layout.tsx` injects a tiny inline bootstrap script that applies the
    stored theme **before first paint** — no flash of the wrong world.
 3. Never hard-code a colour that only exists in one theme. If you need a new

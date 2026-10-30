@@ -1,6 +1,6 @@
 import type { Incident, Severity } from '@helix/core';
 
-export interface HelixStatus {
+export interface MayallStatus {
   foundry: boolean;
   scenarios: number;
   artifacts: number;

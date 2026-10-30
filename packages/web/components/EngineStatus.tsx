@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import type { HelixStatus } from '../lib/types';
+import type { MayallStatus } from '../lib/types';
 import { formatInt } from '../lib/format';
 
 /**
@@ -10,7 +10,7 @@ import { formatInt } from '../lib/format';
  * flag is what the app shell renders in the mobile top bar.
  */
 export function EngineStatus({ compact = false }: { compact?: boolean }) {
-  const [status, setStatus] = useState<HelixStatus | null>(null);
+  const [status, setStatus] = useState<MayallStatus | null>(null);
   const [failed, setFailed] = useState(false);
   const [nonce, setNonce] = useState(0);
 
@@ -21,7 +21,7 @@ export function EngineStatus({ compact = false }: { compact?: boolean }) {
       try {
         const response = await fetch('/api/status', { signal, cache: 'no-store' });
         if (!response.ok) throw new Error(`status ${response.status}`);
-        const payload = (await response.json()) as Partial<HelixStatus>;
+        const payload = (await response.json()) as Partial<MayallStatus>;
         setStatus({
           foundry: Boolean(payload.foundry),
           scenarios: Number(payload.scenarios ?? 0),
@@ -107,7 +107,7 @@ export function EngineStatus({ compact = false }: { compact?: boolean }) {
         <p className={`text-sm ${online ? 'text-ink' : 'text-ember'}`}>
           {online ? 'Engine online' : 'Foundry not installed'}
         </p>
-        <span className="mono ml-auto text-[0.6rem] text-ink-faint">helix {status?.version}</span>
+        <span className="mono ml-auto text-[0.6rem] text-ink-faint">mayall {status?.version}</span>
       </div>
 
       <dl className="grid grid-cols-2 divide-x divide-edge border-y border-edge">

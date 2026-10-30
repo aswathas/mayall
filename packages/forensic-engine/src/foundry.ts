@@ -28,7 +28,9 @@ export function repoRoot(): string {
     const pkg = path.resolve(process.cwd(), 'package.json');
     if (existsSync(pkg)) {
       const json = JSON.parse(readFileSync(pkg, 'utf-8')) as { name?: string };
-      if (json.name === 'helix-forensics') return path.resolve(process.cwd());
+      if (json.name === 'mayall' || json.name === 'helix-forensics') {
+        return path.resolve(process.cwd());
+      }
     }
   } catch {
     /* ignore */

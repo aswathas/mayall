@@ -18,7 +18,7 @@
 | Bible signal tally | observed 4 · expected 2 · notApplicable 0 |
 | Method | **Retrospective classification** over public records — not a mainnet trace analysis |
 | Local reproduction | Available: scenario `selfdestruct`, artifact `artifacts/selfdestruct.json`, lab route `/lab?scenario=selfdestruct`, simulation route `/simulate?scenario=selfdestruct` |
-| Evidence references | Transaction `0xd4e5f607…a1b2c`; HELIX local reproduction |
+| Evidence references | Transaction `0xd4e5f607…a1b2c`; Mayall local reproduction |
 
 ## 2. Executive summary
 

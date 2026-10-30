@@ -1,8 +1,8 @@
 {
-  "name": "helix-forensics",
+  "name": "mayall",
   "version": "0.1.0",
   "private": true,
-  "description": "HELIX — Web3 Exploit Forensics Console. Foundry-powered exploit simulation, on-chain forensic analysis and court-ready forensic bundles.",
+  "description": "Mayall - Web3 Exploit Forensics Console. Foundry-powered exploit simulation, on-chain forensic analysis and evidence bundles.",
   "workspaces": [
     "packages/*"
   ],
