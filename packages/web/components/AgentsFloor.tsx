@@ -46,7 +46,29 @@ function startedAt(value: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return utcTime(value);
+}
+
+/**
+ * Timestamps are rendered in UTC on purpose.
+ *
+ * The page is prerendered on the build machine and hydrated in the browser, so
+ * any locale-dependent formatting renders two different strings and React
+ * reports a hydration mismatch. One fixed format, stated in UTC, keeps the
+ * server and client markup identical.
+ */
+function utcTime(value: string | null): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${d.toISOString().slice(11, 19)} UTC`;
+}
+
+function utcDateTime(value: string | null): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 19)} UTC`;
 }
 
 export default function AgentsFloor({
@@ -125,7 +147,7 @@ export default function AgentsFloor({
         <div className="bg-panel px-4 py-3">
           <p className="label-micro">Snapshot</p>
           <p className="mono mt-1 text-xs text-ink-dim">
-            {snap?.updatedAt ? new Date(snap.updatedAt).toLocaleTimeString() : '—'}
+            {utcTime(snap?.updatedAt ?? null)}
           </p>
         </div>
       </section>
@@ -169,7 +191,7 @@ export default function AgentsFloor({
                 </span>
                 <span className="mono text-[0.65rem] text-ink-faint">{agent.kind}</span>
                 <span className="mono text-[0.65rem] text-ink-faint">{agent.model}</span>
-                <span className="mono ml-auto text-[0.65rem] text-ink-faint">
+                <span className="mono ml-auto text-[0.65rem] text-ink-faint" suppressHydrationWarning>
                   {elapsed(agent.started, now)}
                 </span>
               </div>
@@ -190,7 +212,7 @@ export default function AgentsFloor({
             <h2 className="text-sm font-medium text-ink">Completed delegations</h2>
             <p className="mono text-[0.65rem] text-ink-faint">
               {history.count} runs · {history.cmdc} cmdc · {history.agy} agy · captured{' '}
-              {new Date(history.capturedAt).toLocaleString()}
+              {utcDateTime(history.capturedAt)}
             </p>
           </div>
           <p className="mb-4 max-w-3xl text-xs leading-relaxed text-ink-dim">{history.note}</p>
