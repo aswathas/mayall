@@ -157,6 +157,10 @@ function prepareStage() {
     path.join(ROOT, 'packages', 'forensic-engine'),
     path.join(STAGE, 'packages', 'forensic-engine'),
   );
+  /* The repo-root data directory (Bible export, narratives, agent telemetry) is
+   * read by server components at build time. Link it so the staged build sees
+   * the same files the repository holds. */
+  linkDir(path.join(ROOT, 'data'), path.join(STAGE, 'data'));
 
   fs.mkdirSync(STAGE_WEB, { recursive: true });
   fs.writeFileSync(

@@ -6,11 +6,23 @@ import AgentsFloor, {
   type AgentSnapshot,
 } from '../../components/AgentsFloor';
 
-/** Walk up from the web package to the workspace root (the folder holding `packages`). */
+/**
+ * Locate the workspace root.
+ *
+ * The static export builds from a staging copy of the web package, so walking up
+ * from `process.cwd()` can land on that staging folder instead of the real
+ * repository. The build passes the true root in `HELIX_ROOT`; prefer it, and
+ * only fall back to the directory walk when it is absent (local `next dev`).
+ */
 function repoRoot(): string {
+  const fromEnv = process.env.HELIX_ROOT;
+  if (fromEnv && existsSync(path.join(fromEnv, 'data', 'agents'))) return fromEnv;
+
   let dir = process.cwd();
   for (let i = 0; i < 6; i += 1) {
-    if (existsSync(path.join(dir, 'packages'))) return dir;
+    if (existsSync(path.join(dir, 'packages')) && existsSync(path.join(dir, 'data', 'agents'))) {
+      return dir;
+    }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
